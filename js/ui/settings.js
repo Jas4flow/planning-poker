@@ -49,13 +49,12 @@ export function openSettings({ onSaved } = {}) {
         </div>
 
         <div class="field">
-          <label for="cfg-proxy">Proxy URL (optional)</label>
+          <label for="cfg-proxy">CORS Proxy URL (optional override)</label>
           <input class="input" id="cfg-proxy" type="text" value="${escapeHtml(config.proxy)}"
                  placeholder="http://localhost:8080/">
           <span class="hint">
-            Browsers block direct calls to Jira. Run <code>node proxy.mjs</code> from this folder and put
-            <code>http://localhost:8080/</code> here. Put <code>{url}</code> where an encoded target belongs
-            (<code>https://proxy.example/?{url}</code>); without a placeholder the target is appended as-is.
+            ✓ Pre-configured with a free Supabase Edge Function (no setup needed). 
+            Leave empty to use the default. To use a local proxy, run <code>node proxy.mjs</code> and enter <code>http://localhost:8080/</code>.
           </span>
         </div>
       </div>
