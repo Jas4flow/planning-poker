@@ -105,7 +105,11 @@ export function renderChatBar() {
     </form>`;
 }
 
-/** Close the picker. Safe to call when there is no composer on screen. */
+/**
+ * Close the picker. Picking an emoji does not call this — the picker stays put
+ * so several can be added in a row. Safe to call when there is no composer on
+ * screen.
+ */
 export function closeEmojiPicker() {
   const picker = document.getElementById("chat-emoji-picker");
   const toggle = document.getElementById("chat-emoji-toggle");

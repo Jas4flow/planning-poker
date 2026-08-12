@@ -46,7 +46,7 @@ import {
 const PREFS_KEY = "pp:prefs";
 const HEARTBEAT_MS = 20000;
 
-let prefs = { theme: "light", sound: true, ...(readJson(PREFS_KEY) || {}) };
+let prefs = { theme: "light", sound: true, sidebarWidth: 360, ...(readJson(PREFS_KEY) || {}) };
 let auth = { user: null, profile: null };
 let me = { id: "", name: "" };
 let session = null; // { roomId, meta, transport, store, cleanup: [] }
@@ -67,6 +67,83 @@ function savePrefs(patch) {
 function applyTheme() {
   document.documentElement.dataset.theme = prefs.theme === "dark" ? "dark" : "light";
 }
+
+/* ---------- Panel width ---------- */
+
+const SIDE_MIN = 300;
+const SIDE_MAX = 900;
+/** The table needs this much room whatever the panel is doing. */
+const STAGE_MIN = 420;
+
+function sidebarBounds() {
+  return { min: SIDE_MIN, max: Math.max(SIDE_MIN, Math.min(SIDE_MAX, window.innerWidth - STAGE_MIN)) };
+}
+
+/**
+ * Set the panel width. Everything inside is fluid, so moving the one custom
+ * property is enough — the grid column, the table beside it and the story
+ * content all follow. A saved width is re-clamped rather than trusted: the
+ * window may be much narrower than it was when the width was stored.
+ */
+function setSidebarWidth(width, persist = false) {
+  const { min, max } = sidebarBounds();
+  const next = Math.round(Math.min(Math.max(width, min), max));
+  prefs.sidebarWidth = next;
+  document.documentElement.style.setProperty("--sidebar-width", `${next}px`);
+  const handle = $("#side-resizer");
+  if (handle) {
+    handle.setAttribute("aria-valuenow", String(next));
+    handle.setAttribute("aria-valuemin", String(min));
+    handle.setAttribute("aria-valuemax", String(max));
+  }
+  if (persist) writeJson(PREFS_KEY, prefs);
+}
+
+/* Drag the edge. */
+document.addEventListener("pointerdown", (event) => {
+  const handle = event.target.closest("#side-resizer");
+  if (!handle) return;
+  event.preventDefault();
+  // Capture keeps a real drag alive over iframes and off-window; it is a bonus,
+  // not a requirement, so a browser refusing it must not kill the drag.
+  try {
+    handle.setPointerCapture(event.pointerId);
+  } catch {
+    /* the window listeners below carry the drag on their own */
+  }
+  document.body.classList.add("is-resizing");
+
+  // The panel is on the right, so its width is the gap from the pointer to the
+  // right edge of the window.
+  const onMove = (moveEvent) => setSidebarWidth(window.innerWidth - moveEvent.clientX);
+  const onUp = () => {
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    window.removeEventListener("pointercancel", onUp);
+    document.body.classList.remove("is-resizing");
+    // One write at the end, not one per pixel of travel.
+    writeJson(PREFS_KEY, prefs);
+  };
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
+  window.addEventListener("pointercancel", onUp);
+});
+
+/* Arrow keys, for anyone not using a mouse. Left widens, since it grows left. */
+document.addEventListener("keydown", (event) => {
+  if (!event.target.closest?.("#side-resizer")) return;
+  const step = event.shiftKey ? 48 : 16;
+  if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    setSidebarWidth(prefs.sidebarWidth + step, true);
+  } else if (event.key === "ArrowRight") {
+    event.preventDefault();
+    setSidebarWidth(prefs.sidebarWidth - step, true);
+  }
+});
+
+/* A window that shrank can leave a stored width with nowhere to go. */
+window.addEventListener("resize", () => setSidebarWidth(prefs.sidebarWidth));
 
 /* ---------- Auth ---------- */
 
@@ -491,11 +568,13 @@ const actions = {
     picker.hidden = !picker.hidden;
     el.setAttribute("aria-expanded", String(!picker.hidden));
   },
+  // The picker deliberately stays open so several emoji can go in one after
+  // another. Focus returns to the input so typing carries on where it left off,
+  // and only a click outside or Escape puts the picker away.
   "chat-emoji": (el) => {
     const input = $("#chat-input");
     if (!input) return;
     input.value = `${input.value}${el.dataset.emoji}`.slice(0, input.maxLength);
-    closeEmojiPicker();
     input.focus();
   },
   "toggle-role": () => {
@@ -767,7 +846,6 @@ document.addEventListener("submit", (event) => {
   const input = form.querySelector("#chat-input");
   const text = input.value.trim();
   input.value = "";
-  closeEmojiPicker();
   if (!text) return;
   say({ name: me.name, text });
 });
@@ -946,6 +1024,7 @@ mountLanding({
 
 async function boot() {
   applyTheme();
+  setSidebarWidth(prefs.sidebarWidth);
   await refreshAuth();
   await route();
   window.addEventListener("hashchange", route);

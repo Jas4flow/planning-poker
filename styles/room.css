@@ -32,9 +32,16 @@
   text-overflow: ellipsis;
 }
 
+/*
+ * The panel width is a custom property so dragging it only has to move one
+ * value. The `min()` is the guarantee: whatever width was dragged or restored
+ * from a previous, wider window, the table beside it keeps 420px. The script
+ * clamps too, but a layout invariant belongs in the layout — it must hold on a
+ * window resize the script never hears about.
+ */
 .room__body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--sidebar-width);
+  grid-template-columns: minmax(0, 1fr) min(var(--sidebar-width), calc(100% - 420px));
   min-height: 0;
 }
 
@@ -593,11 +600,55 @@
 /* ---------- Sidebar ---------- */
 
 .side {
+  position: relative; /* anchors the resize handle */
   display: flex;
   flex-direction: column;
   min-height: 0;
   border-left: 1px solid var(--panel-line);
   background: var(--panel-bg);
+}
+
+/*
+ * Drag the panel wider. The grab area straddles the border so it is easy to
+ * hit without stealing clicks from the content inside.
+ */
+.side__resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  z-index: 6;
+  width: 7px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.side__resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: var(--brand-orange);
+  opacity: 0;
+  transition: opacity 120ms var(--ease);
+}
+
+.side__resizer:hover::after,
+.side__resizer:focus-visible::after,
+body.is-resizing .side__resizer::after {
+  opacity: 1;
+}
+
+.side__resizer:focus-visible {
+  outline: none;
+}
+
+/* Keep the cursor and stop text selecting while a drag is in flight. */
+body.is-resizing {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .side__tabs {
@@ -723,6 +774,51 @@
   margin: 0 0 var(--sp-2);
   padding-left: var(--sp-3);
   border-left: 2px solid var(--line-strong);
+}
+
+.story-desc hr {
+  margin: var(--sp-3) 0;
+  border: 0;
+  border-top: 1px solid var(--panel-line);
+}
+
+/*
+ * Jira tables arrive as real tables. The sidebar is narrower than most of them,
+ * so the wrapper scrolls sideways instead of letting the table stretch the
+ * column and squash the board next to it.
+ */
+.story-desc__table {
+  max-width: 100%;
+  margin: 0 0 var(--sp-2);
+  overflow-x: auto;
+}
+
+.story-desc table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-xs);
+}
+
+.story-desc th,
+.story-desc td {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--line-strong);
+  text-align: left;
+  vertical-align: top;
+}
+
+.story-desc th {
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Cell contents are paragraphs; the trailing margin would pad every row. */
+.story-desc td > :last-child,
+.story-desc th > :last-child {
+  margin-bottom: 0;
 }
 
 /* Story list */
@@ -946,6 +1042,11 @@
   .side {
     border-left: 0;
     border-top: 1px solid var(--panel-line);
+  }
+
+  /* The panel is stacked underneath here, so there is no width to drag. */
+  .side__resizer {
+    display: none;
   }
 
   .felt {
