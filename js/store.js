@@ -315,6 +315,25 @@ export function reduce(state, action) {
       return room;
     }
 
+    /**
+     * Drag-and-drop reorder. `order` is the new sequence of ids for the
+     * stories being dragged (the open backlog — archived ones are never
+     * shown in that list, so they never appear in `order`). Walking the
+     * original array and refilling only the slots whose story is in `order`
+     * keeps archived stories exactly where they were instead of needing a
+     * separate merge step.
+     */
+    case "REORDER_STORY": {
+      const order = Array.isArray(action.order) ? action.order : [];
+      if (!order.length) return state;
+      const byId = new Map(room.stories.map((s) => [s.id, s]));
+      if (!order.every((id) => byId.has(id))) return state;
+      const moving = new Set(order);
+      let cursor = 0;
+      room.stories = room.stories.map((s) => (moving.has(s.id) ? byId.get(order[cursor++]) : s));
+      return room;
+    }
+
     case "SET_ACTIVE_STORY": {
       if (action.id && !room.stories.some((s) => s.id === action.id)) return state;
       if (room.activeStoryId === action.id) return state;

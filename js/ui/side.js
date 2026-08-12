@@ -121,7 +121,9 @@ function storyRow(story, room, ctx) {
   return `
     <li class="story-item${isActive ? " story-item--active" : ""}${
     story.status === "estimated" ? " story-item--estimated" : ""
-  }">
+  }" data-id="${story.id}">
+      <button class="story-item__drag" type="button" data-drag-handle data-id="${story.id}"
+              aria-label="Drag to reorder ${escapeHtml(story.title)}" title="Drag to reorder">⠿</button>
       <button class="story-item__pick" type="button" data-act="set-active-story" data-id="${story.id}"
               aria-label="Put ${escapeHtml(story.title)} on the table" title="Put on the table">${isActive ? "●" : ""}</button>
       <div class="story-item__main">

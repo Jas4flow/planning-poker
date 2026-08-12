@@ -204,6 +204,62 @@ window.addEventListener("pointercancel", () => {
   descResizing = false;
 });
 
+/* ---------- Backlog drag reorder ---------- */
+
+/**
+ * The up/down buttons move a story one slot via MOVE_STORY; this lets you
+ * grab one and drop it anywhere. Same hazard as the description resize
+ * above: render() rewrites #panel-story's whole innerHTML every few seconds,
+ * which would rip the dragged node out of the DOM mid-drag. So while a drag
+ * is live, render() is told to leave that panel alone (see the `!storyDrag`
+ * check below) and the reordering happens by moving the real <li> nodes
+ * directly; only on drop is the result turned into a REORDER_STORY action.
+ */
+let storyDrag = null;
+
+document.addEventListener("pointerdown", (event) => {
+  const handle = event.target.closest("[data-drag-handle]");
+  if (!handle) return;
+  const item = handle.closest(".story-item");
+  const list = item?.closest(".story-list");
+  if (!item || !list) return;
+  event.preventDefault();
+  try {
+    handle.setPointerCapture(event.pointerId);
+  } catch {
+    /* the window listeners below carry the drag on their own */
+  }
+  storyDrag = { list, item };
+  item.classList.add("story-item--dragging");
+  list.classList.add("story-list--reordering");
+  window.addEventListener("pointermove", onStoryDragMove);
+  window.addEventListener("pointerup", onStoryDragEnd);
+  window.addEventListener("pointercancel", onStoryDragEnd);
+});
+
+function onStoryDragMove(event) {
+  if (!storyDrag) return;
+  const { list, item } = storyDrag;
+  const target = Array.from(list.children)
+    .filter((el) => el !== item)
+    .find((sibling) => event.clientY < sibling.getBoundingClientRect().top + sibling.getBoundingClientRect().height / 2);
+  if (target) list.insertBefore(item, target);
+  else list.appendChild(item);
+}
+
+function onStoryDragEnd() {
+  if (!storyDrag) return;
+  const { list, item } = storyDrag;
+  window.removeEventListener("pointermove", onStoryDragMove);
+  window.removeEventListener("pointerup", onStoryDragEnd);
+  window.removeEventListener("pointercancel", onStoryDragEnd);
+  item.classList.remove("story-item--dragging");
+  list.classList.remove("story-list--reordering");
+  const order = Array.from(list.children).map((el) => el.dataset.id).filter(Boolean);
+  storyDrag = null;
+  if (order.length > 1) session.store.dispatch({ type: "REORDER_STORY", order });
+}
+
 /* ---------- Auth ---------- */
 
 async function refreshAuth() {
@@ -497,7 +553,7 @@ function render() {
   const descBefore = $(".story-desc");
   const descScroll = descBefore?.scrollTop ?? 0;
   if (descBefore) rememberDescHeight(descBefore.offsetHeight);
-  if (sideTab === "story" && !descResizing) setHtml($("#panel-story"), renderStoryPanel(room, ctx));
+  if (sideTab === "story" && !descResizing && !storyDrag) setHtml($("#panel-story"), renderStoryPanel(room, ctx));
   if (sideTab === "people") setHtml($("#panel-people"), renderPeoplePanel(room, ctx));
   if (sideTab === "history") setHtml($("#panel-history"), renderHistoryPanel(room, ctx));
   if (panel) panel.scrollTop = scroll;

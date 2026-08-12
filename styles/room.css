@@ -856,12 +856,41 @@ body.is-resizing {
 
 .story-item {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--sp-2);
   padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--panel-line);
   border-radius: var(--radius);
+}
+
+.story-item__drag {
+  width: 20px;
+  height: 24px;
+  border: 0;
+  background: none;
+  color: var(--text-faint);
+  cursor: grab;
+  font-size: var(--fs-sm);
+  line-height: 1;
+  touch-action: none;
+}
+
+.story-item__drag:hover {
+  color: var(--text);
+}
+
+.story-item--dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+.story-item--dragging .story-item__drag {
+  cursor: grabbing;
+}
+
+.story-list--reordering .story-item:not(.story-item--dragging) {
+  transition: transform 0.12s ease;
 }
 
 .story-item--active {

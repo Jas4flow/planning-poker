@@ -750,6 +750,8 @@ function blockToAdf(node) {
       return { type: "codeBlock", content: [{ type: "text", text: node.textContent }] };
     case "HR":
       return { type: "rule" };
+    case "TABLE":
+      return tableToAdf(node);
     case "P":
     default:
       return { type: "paragraph", content: inlineToAdf(node.childNodes) };
@@ -760,6 +762,19 @@ function listItemsToAdf(list) {
   return Array.from(list.children)
     .filter((li) => li.tagName === "LI")
     .map((li) => ({ type: "listItem", content: [{ type: "paragraph", content: inlineToAdf(li.childNodes) }] }));
+}
+
+function tableToAdf(table) {
+  const rows = Array.from(table.querySelectorAll("tr")).map((tr) => ({
+    type: "tableRow",
+    content: Array.from(tr.children)
+      .filter((cell) => cell.tagName === "TH" || cell.tagName === "TD")
+      .map((cell) => ({
+        type: cell.tagName === "TH" ? "tableHeader" : "tableCell",
+        content: [{ type: "paragraph", content: inlineToAdf(cell.childNodes) }],
+      })),
+  }));
+  return { type: "table", content: rows };
 }
 
 function inlineToAdf(nodes) {

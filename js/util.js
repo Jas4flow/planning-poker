@@ -60,7 +60,11 @@ export function htmlToText(html) {
 const RTE_ALLOWED_TAGS = new Set([
   "P", "BR", "STRONG", "B", "EM", "I", "U", "S", "STRIKE",
   "UL", "OL", "LI", "A", "BLOCKQUOTE", "H3", "H4", "CODE", "PRE", "HR",
+  "TABLE", "THEAD", "TBODY", "TR", "TH", "TD",
 ]);
+
+/** Attributes kept on top of the href/rel/target handling below. */
+const RTE_ALLOWED_CELL_ATTRS = new Set(["colspan", "rowspan"]);
 
 /** Tags removed together with their contents, rather than unwrapped. */
 const RTE_STRIP_ENTIRELY = new Set([
@@ -84,6 +88,7 @@ export function sanitizeHtml(html) {
     } else {
       for (const attr of Array.from(node.attributes)) {
         if (node.tagName === "A" && attr.name === "href" && /^(https?:|mailto:)/i.test(attr.value.trim())) continue;
+        if ((node.tagName === "TH" || node.tagName === "TD") && RTE_ALLOWED_CELL_ATTRS.has(attr.name)) continue;
         node.removeAttribute(attr.name);
       }
       if (node.tagName === "A") {
