@@ -558,8 +558,8 @@ ticker.add((now) => {
   if (ticks % (HEARTBEAT_MS / 500) === 0 && room.participants[me.id]) {
     session.store.dispatch({ type: "HEARTBEAT", id: me.id });
     void db.touchMembership(session.roomId, {});
-  } else if (ticks % 10 === 0) {
-    render(); // refresh "away" markers and reaction bubbles
+  } else {
+    render(); // refresh "away" markers and reaction bubbles within half a second
   }
 });
 
