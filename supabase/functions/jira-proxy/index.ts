@@ -15,32 +15,38 @@ serve(async (req) => {
 
   try {
     // Get the target URL from the request
-    // The app sends the full Jira URL after the leading slash
+    // Can be either: ?url=<encoded-url> (new format) or appended to path (legacy)
     const url = new URL(req.url);
-    const target = url.pathname.replace(/^\/functions\/v1\/jira-proxy\/?/, "");
+    let target = url.searchParams.get("url");
+
+    if (!target) {
+      // Fallback: try to extract from pathname (legacy format)
+      target = url.pathname.replace(/^\/functions\/v1\/jira-proxy\/?/, "");
+    }
 
     if (!target) {
       return new Response(
-        JSON.stringify({ error: "Expected a full target URL after the slash." }),
+        JSON.stringify({ error: "Expected a target URL in ?url=... or appended to path." }),
         { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
 
-    // Parse the full URL
+    // Parse and validate the target URL
     let fullUrl: string;
     try {
-      // If it looks like a path, prepend https://
-      if (target.startsWith("/")) {
-        fullUrl = "https://error"; // Will error below
-      } else if (target.startsWith("http://") || target.startsWith("https://")) {
+      // Target should be a full URL or a path
+      if (target.startsWith("http://") || target.startsWith("https://")) {
         fullUrl = target;
+      } else if (target.startsWith("/")) {
+        fullUrl = `https://4flow.atlassian.net${target}`;
       } else {
-        fullUrl = `https://${target}`;
+        // Assume it's a path without leading slash
+        fullUrl = `https://4flow.atlassian.net/${target}`;
       }
       new URL(fullUrl); // Validate it's a real URL
     } catch {
       return new Response(
-        JSON.stringify({ error: "Invalid target URL." }),
+        JSON.stringify({ error: "Invalid target URL.", detail: target }),
         { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }

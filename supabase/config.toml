@@ -1,0 +1,5 @@
+# Supabase configuration
+# Allow Edge Functions to accept unauthenticated requests
+
+[functions.jira-proxy]
+verify_jwt = false
