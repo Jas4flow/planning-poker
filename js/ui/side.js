@@ -96,13 +96,21 @@ function storyNow(story, ctx, room) {
             ? `<button class="btn btn--sm btn--primary" type="button" data-act="select-story" data-id="${story.id}">Join here</button>`
             : ""
         }
-        <button class="btn btn--sm btn--primary" type="button" data-act="update-points">Update story point</button>
         ${
-          story.key
+          ctx.isOwner
+            ? `<button class="btn btn--sm btn--primary" type="button" data-act="update-points">Update story point</button>`
+            : ""
+        }
+        ${
+          story.key && ctx.isOwner
             ? `<button class="btn btn--sm" type="button" data-act="refresh-story">Refresh from Jira</button>`
             : ""
         }
-        <button class="btn btn--sm btn--ghost" type="button" data-act="edit-story">Edit</button>
+        ${
+          ctx.isOwner
+            ? `<button class="btn btn--sm btn--ghost" type="button" data-act="edit-story">Edit</button>`
+            : ""
+        }
       </div>
       ${ctx.isHost ? "" : `<p class="hint">Anyone can write the agreed estimate back to Jira with their own credentials.</p>`}
     </article>`;
