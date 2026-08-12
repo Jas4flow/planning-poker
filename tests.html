@@ -377,6 +377,15 @@
       );
       deepEq("nothing usable", parseIssueRefs("hello, world"), []);
 
+      // Range expansion tests
+      deepEq("single range CUMA-156--158", parseIssueRefs("CUMA-156--158"), ["CUMA-156", "CUMA-157", "CUMA-158"]);
+      deepEq("range with other keys CUMA-156--158,CUMA-190", parseIssueRefs("CUMA-156--158,CUMA-190"), ["CUMA-156", "CUMA-157", "CUMA-158", "CUMA-190"]);
+      deepEq("lowercase range cuma-1--3", parseIssueRefs("cuma-1--3"), ["CUMA-1", "CUMA-2", "CUMA-3"]);
+      deepEq("range with spaces", parseIssueRefs("CUMA-5--7 ; CUMA-10"), ["CUMA-5", "CUMA-6", "CUMA-7", "CUMA-10"]);
+      deepEq("single-number range", parseIssueRefs("PROJ-99--99"), ["PROJ-99"]);
+      deepEq("duplicates in range and keys", parseIssueRefs("CUMA-1--3, CUMA-2, CUMA-4"), ["CUMA-1", "CUMA-2", "CUMA-3", "CUMA-4"]);
+      deepEq("range with URL and range", parseIssueRefs("CUMA-5--6, https://acme.atlassian.net/browse/CUMA-7"), ["CUMA-5", "CUMA-6", "CUMA-7"]);
+
       eq("base URL gets a scheme", normalizeBaseUrl("acme.atlassian.net"), "https://acme.atlassian.net");
       eq("base URL loses trailing slashes", normalizeBaseUrl("https://acme.atlassian.net//"), "https://acme.atlassian.net");
 

@@ -184,13 +184,52 @@ export function parseIssueRef(input) {
 }
 
 /**
- * Several references at once: `CUMA-130, CUMA-131` or a list of URLs, separated
- * by commas, semicolons, newlines or spaces. Duplicates are dropped, order kept.
+ * Expand a range notation like "CUMA-156--158" to ["CUMA-156", "CUMA-157", "CUMA-158"]
+ * Returns null if the input is not a valid range pattern.
+ */
+function expandIssueRange(input) {
+  const text = String(input || "").trim();
+  // Match pattern: PROJECT-NUMBER--NUMBER (e.g., CUMA-156--158)
+  const rangeMatch = text.match(/^([A-Za-z][A-Za-z0-9_]*)-(\d+)--(\d+)$/);
+  if (!rangeMatch) return null;
+
+  const [, project, startStr, endStr] = rangeMatch;
+  const startNum = parseInt(startStr, 10);
+  const endNum = parseInt(endStr, 10);
+
+  if (startNum > endNum) return null; // Invalid range (start > end)
+  if (endNum - startNum > 1000) return null; // Prevent excessively large ranges
+
+  // Generate all keys in the range
+  const range = [];
+  for (let i = startNum; i <= endNum; i++) {
+    range.push(`${project.toUpperCase()}-${i}`);
+  }
+  return range;
+}
+
+/**
+ * Several references at once: `CUMA-130, CUMA-131`, ranges like `CUMA-156--158`,
+ * or a list of URLs, separated by commas, semicolons, newlines or spaces.
+ * Duplicates are dropped, order kept.
  */
 export function parseIssueRefs(input) {
   const seen = new Set();
   const keys = [];
   for (const chunk of String(input || "").split(/[\s,;]+/)) {
+    // Try to expand as a range first (e.g., CUMA-156--158)
+    const range = expandIssueRange(chunk);
+    if (range) {
+      for (const key of range) {
+        if (!seen.has(key)) {
+          seen.add(key);
+          keys.push(key);
+        }
+      }
+      continue;
+    }
+
+    // Otherwise treat as a single key or URL
     const key = parseIssueRef(chunk);
     if (!key || seen.has(key)) continue;
     seen.add(key);
