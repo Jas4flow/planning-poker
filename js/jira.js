@@ -54,7 +54,10 @@ function tidy(config) {
   return {
     ...config,
     baseUrl: normalizeBaseUrl(config.baseUrl),
-    proxy: normalizeProxy(config.proxy),
+    // An empty override means "use the default proxy" (see the Settings
+    // hint) — normalizeProxy("") is "", which would otherwise disable
+    // proxying and send the request straight into the browser's CORS wall.
+    proxy: normalizeProxy(config.proxy) || DEFAULT_JIRA_PROXY,
     pointsField: (config.pointsField || DEFAULT_POINTS_FIELD).trim(),
     mock: Boolean(config.mock),
   };
