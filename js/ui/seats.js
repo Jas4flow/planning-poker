@@ -10,10 +10,12 @@ const REACTION_TTL_MS = 5000;
 
 export function renderStage(room, ctx) {
   const now = ctx.now || Date.now();
-  // The table shows the host plus whoever has joined the current story —
-  // being connected to the room is not the same as being at the table for it.
+  // The table shows whoever is here right now and has joined the current story.
+  // Being connected to the room is not the same as being at the table for it,
+  // and someone whose heartbeat has stopped is no longer in the round at all —
+  // an empty seat for them just makes the count harder to read.
   const people = Object.values(room.participants)
-    .filter((p) => hasSelectedStory(room, p.id))
+    .filter((p) => hasSelectedStory(room, p.id) && !isAway(p, now))
     .sort((a, b) => a.joinedAt - b.joinedAt);
   const half = Math.ceil(people.length / 2);
   const stats = room.revealed ? computeStats(castVotes(room), deckCards(room)) : null;
@@ -27,7 +29,6 @@ export function renderStage(room, ctx) {
 
 function seat(person, room, ctx, now, stats, side) {
   const vote = room.votes[person.id];
-  const away = isAway(person, now);
   const isSpectator = person.role === "spectator";
   const outlier = stats && vote && stats.outliers.includes(vote);
   const showReaction = person.reaction && now - person.reaction.at < REACTION_TTL_MS;
@@ -42,8 +43,8 @@ function seat(person, room, ctx, now, stats, side) {
   }
 
   return `
-    <div class="seat seat--${side}${away ? " seat--away" : ""}${isSpectator ? " seat--spectator" : ""}"
-         title="${escapeHtml(person.name)}${away ? " — away" : ""}">
+    <div class="seat seat--${side}${isSpectator ? " seat--spectator" : ""}"
+         title="${escapeHtml(person.name)}">
       ${showReaction ? `<span class="seat__reaction">${escapeHtml(person.reaction.emoji)}</span>` : ""}
       <div class="${cardClass}">${cardText}</div>
       <div class="seat__who">
