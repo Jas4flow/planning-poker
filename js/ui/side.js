@@ -1,14 +1,14 @@
 /** Sidebar: the story on the table, the backlog, people, and round history. */
 
 import { escapeHtml, initials, formatTime, round } from "../util.js";
-import { activeStory, isAway } from "../store.js";
+import { activeStory, isAway, hasSelectedStory } from "../store.js";
 import { deckCards, DECK_LIST } from "../decks.js";
 import { computeStats } from "../stats.js";
 
 export function renderStoryPanel(room, ctx) {
   const story = activeStory(room);
   return `
-    ${story ? storyNow(story, ctx) : `<p class="empty">Nothing on the table yet.</p>`}
+    ${story ? storyNow(story, ctx, room) : `<p class="empty">Nothing on the table yet.</p>`}
 
     <div>
       <div class="side__section-title">
@@ -51,7 +51,7 @@ export function renderStoryPanel(room, ctx) {
     </div>`;
 }
 
-function storyNow(story, ctx) {
+function storyNow(story, ctx, room) {
   return `
     <article class="story-now">
       <div class="story-now__key">
@@ -90,6 +90,11 @@ function storyNow(story, ctx) {
             : `<span class="chip ${story.votingEnabled ? "chip--ok" : "chip--warn"}">
                  ${story.votingEnabled ? "Voting open" : "Voting paused"}
                </span>`
+        }
+        ${
+          !ctx.isHost && !hasSelectedStory(room, ctx.meId)
+            ? `<button class="btn btn--sm btn--primary" type="button" data-act="select-story" data-id="${story.id}">Join this story</button>`
+            : ""
         }
         <button class="btn btn--sm btn--primary" type="button" data-act="update-points">Update story point</button>
         ${
