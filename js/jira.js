@@ -21,12 +21,19 @@ const LEGACY_KEY = "pp:jira";
  */
 export const DEFAULT_POINTS_FIELD = "customfield_10033";
 
+/**
+ * Default Supabase Edge Function proxy for CORS access to Jira.
+ * This proxy is publicly available and works for all users from any domain
+ * (including GitHub Pages). No setup needed for the proxy itself.
+ */
+export const DEFAULT_JIRA_PROXY = "https://ywuxnuussttuhaizyogi.supabase.co/functions/v1/jira-proxy/";
+
 export const defaultConfig = {
   baseUrl: "",
   email: "",
   token: "",
   pointsField: DEFAULT_POINTS_FIELD,
-  proxy: "",
+  proxy: DEFAULT_JIRA_PROXY,
   mock: false,
 };
 

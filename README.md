@@ -107,36 +107,24 @@ Open **Jira settings** and fill in:
 | Email | Your Atlassian account email. Leave empty on Jira Server/Data Center to send the token as a bearer token |
 | API token | Create one at [id.atlassian.com](https://id.atlassian.com/manage-profile/security/api-tokens) |
 | Story point field id | `customfield_10033` on 4flow's Jira — that is the "Story Points" field with the real values. `customfield_10016` ("Story point estimate") also exists there but is unused, so writing to it silently changes nothing. Press **Detect** on any other instance |
-| Proxy URL | `http://localhost:8080/` — see below |
+
+**Proxy URL:** Already pre-configured! No setup needed. ✓
 
 Press **Test connection** before you start a session.
 
-### The proxy — needed for real Jira Cloud
+### How the CORS proxy works
 
-Start it from this folder in its own terminal and leave it running:
+The app uses a **Supabase Edge Function** as a free CORS proxy. This allows secure access to Jira Cloud
+from any browser (including GitHub Pages) without needing to run a local proxy.
 
-```bash
-node proxy.mjs
-```
+**Why it's needed:** Jira Cloud does not allow authenticated cross-origin requests from a browser, so the page
+cannot call `your-company.atlassian.net` directly. The call must come from a server (the Edge Function).
 
-It listens on `127.0.0.1:8080` and forwards only to `4flow.atlassian.net` (change with
-`JIRA_HOSTS=other-site.atlassian.net node proxy.mjs`), so it is not an open relay. Your Jira token
-passes straight through and is never logged or stored.
+**Three ways to use:**
 
-### Why a proxy is needed at all
-
-Jira Cloud does not allow authenticated cross-origin requests from a browser, so the page cannot call
-`your-company.atlassian.net` directly. Three ways round it:
-
-Jira Cloud sends no `Access-Control-Allow-Origin` header for authenticated `/rest/api/3` calls, so
-the browser throws the request away before Jira ever sees it — that is the "Failed to fetch" error.
-Nothing in the page can change that; the call has to leave from somewhere that is not a browser.
-Three ways:
-
-1. **`node proxy.mjs`** — above. Simplest, works today.
-2. **A gateway your company already runs** in front of Jira with your origin allowed.
-3. **Mock mode** — tick it in Settings. A built-in fake Jira with six sample `CUMA-*` issues serves
-   every flow offline, writing story points included. For demos, not for real estimates.
+1. **Pre-configured proxy (default)** ✅ — Works immediately, no setup needed
+2. **Mock mode** — tick it in Settings. A built-in fake Jira with six sample `CUMA-*` issues serves every flow offline
+3. **Local proxy** — `node proxy.mjs` for local development (optional, overrides pre-configured proxy)
 
 Jira settings are stored per account in `pp_jira_settings`, so the same connection works from any
 browser you sign in on. Row level security limits every account to its own row — verified by signing
@@ -153,7 +141,7 @@ are happy to estimate with, and revoke it at
 1. **Sign in** — name, email, password. New email creates the account and signs you in. Then
    **create a session** — name, deck.
 2. **Add stories** — *Add from Jira* takes one issue key, or several separated by commas:
-   `CUMA-130, CUMA-131`. URLs work too, and mixed lists. Each summary becomes a heading and each
+   `CUMA-130, CUMA-131` or ranges: `CUMA-130--CUMA-135`. URLs work too, and mixed lists. Each summary becomes a heading and each
    description is shown to everyone, with lists, code blocks and links preserved. *Import by JQL*
    pulls in a whole sprint or filter.
 3. **Invite the team** — press **Invite** and send the link. They pick a name, choose voter or
