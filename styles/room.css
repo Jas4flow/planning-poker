@@ -544,12 +544,20 @@
   background: var(--surface-sunken);
 }
 
-/* One message at a time, top right of the stage, clear of the sidebar. */
+/*
+ * Stacked at the top right of the stage, clear of the sidebar. Anchored at the
+ * top so a new line lands underneath the ones already there, and the rest slide
+ * up as each expires.
+ */
 .chat-feed {
   position: absolute;
   top: var(--sp-3);
   right: var(--sp-4);
   z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--sp-2);
   max-width: min(420px, 60%);
   pointer-events: none;
 }

@@ -23,47 +23,54 @@ export const CHAT_EMOJI = [
 
 const SHOW_MS = 10000;
 const MAX_LENGTH = 140;
-/** A flood must not build a backlog that takes minutes to drain. */
-const MAX_QUEUED = 6;
+/** A flood must not bury the board it is sitting on top of. */
+const MAX_VISIBLE = 5;
 
 /**
- * A feed that shows one message at a time in `hostEl`, each for ten seconds.
+ * A feed that stacks messages in `hostEl`, newest underneath, each holding its
+ * own ten seconds. Several arriving inside one window all stay on screen and
+ * then leave independently as their time runs out, so a quick exchange reads as
+ * a conversation rather than a slideshow.
+ *
  * @param {HTMLElement} hostEl
  */
 export function createChatFeed(hostEl) {
-  const queue = [];
-  let timer = null;
+  /** @type {{node: HTMLElement, timer: number}[]} oldest first */
+  const shown = [];
 
-  function step() {
-    const message = queue.shift();
-    if (!message) {
-      timer = null;
-      hostEl.innerHTML = "";
-      return;
-    }
-    hostEl.innerHTML = bubble(message);
-    timer = setTimeout(step, SHOW_MS);
+  function drop(entry) {
+    clearTimeout(entry.timer);
+    entry.node.remove();
+    const index = shown.indexOf(entry);
+    if (index >= 0) shown.splice(index, 1);
   }
 
   return {
     push(raw) {
       const text = String(raw?.text ?? "").trim().slice(0, MAX_LENGTH);
       if (!text) return;
-      queue.push({
+
+      const holder = document.createElement("div");
+      holder.innerHTML = bubble({
         name: String(raw?.name ?? "").trim().slice(0, 40),
         text,
         system: raw?.kind === "system",
       });
-      // Keep the newest — an old line nobody has seen yet is worth less than
-      // the one that just arrived.
-      if (queue.length > MAX_QUEUED) queue.splice(0, queue.length - MAX_QUEUED);
-      if (!timer) step();
+      const node = holder.firstElementChild;
+      if (!node) return;
+
+      const entry = { node, timer: 0 };
+      entry.timer = setTimeout(() => drop(entry), SHOW_MS);
+      shown.push(entry);
+      hostEl.appendChild(node);
+
+      // Past the cap the oldest goes early — it has been read, and the newest
+      // line matters more than a full stack.
+      while (shown.length > MAX_VISIBLE) drop(shown[0]);
     },
 
     clear() {
-      queue.length = 0;
-      if (timer) clearTimeout(timer);
-      timer = null;
+      while (shown.length) drop(shown[0]);
       hostEl.innerHTML = "";
     },
   };
