@@ -2,7 +2,8 @@
 
 import { openModal, closeModal, field } from "./modals.js";
 import { openSettings, errorText } from "./settings.js";
-import { escapeHtml, toast, textToHtml, htmlToText, round } from "../util.js";
+import { richTextField, mountRichText } from "./rte.js";
+import { escapeHtml, toast, round } from "../util.js";
 import { createStory } from "../store.js";
 import { deckCards, cardToNumber } from "../decks.js";
 import { validatePointValue } from "../stats.js";
@@ -146,12 +147,12 @@ export function openManualStory({ store, story = null }) {
     title: editing ? "Edit story" : "Add a story by hand",
     body: `
       ${field({ id: "story-title", label: "Heading", value: story?.title || "", attrs: "autofocus" })}
-      <div class="field">
-        <label for="story-desc">Description</label>
-        <textarea class="textarea" id="story-desc" placeholder="What does this story cover?">${escapeHtml(
-          htmlToText(story?.description || "")
-        )}</textarea>
-      </div>
+      ${richTextField({
+        id: "story-desc",
+        label: "Description",
+        value: story?.description || "",
+        placeholder: "What does this story cover?",
+      })}
       ${field({
         id: "story-key",
         label: "Jira key (optional)",
@@ -169,13 +170,15 @@ export function openManualStory({ store, story = null }) {
       <button class="btn btn--primary" type="button" data-save>Add story</button>`,
   });
 
+  const desc = mountRichText(handle.body, "story-desc");
+
   const saveHandler = () => {
     const title = handle.body.querySelector("#story-title").value.trim();
     if (!title) {
       handle.message("Give the story a heading.", "warn");
       return;
     }
-    const description = textToHtml(handle.body.querySelector("#story-desc").value);
+    const description = desc.getHtml();
     const rawKey = handle.body.querySelector("#story-key").value.trim();
     const key = rawKey ? jira.parseIssueRef(rawKey) : null;
     if (rawKey && !key) {
@@ -212,7 +215,7 @@ export function openManualStory({ store, story = null }) {
       handle.message("Give the story a heading.", "warn");
       return;
     }
-    const description = textToHtml(handle.body.querySelector("#story-desc").value);
+    const description = desc.getHtml();
     const rawKey = handle.body.querySelector("#story-key").value.trim();
     const key = rawKey ? jira.parseIssueRef(rawKey) : null;
     if (rawKey && !key) {
@@ -231,11 +234,9 @@ export function openManualStory({ store, story = null }) {
     if (key) {
       handle.busy(true, "Updating Jira…");
       try {
-        // Extract plain text from HTML description for Jira
-        const plainDescription = htmlToText(description);
         await jira.updateIssueFields(key, {
           summary: title,
-          description: plainDescription,
+          description,
         });
         handle.message(`✓ Updated ${key} in Jira`, "ok");
         setTimeout(() => closeModal(), 500);

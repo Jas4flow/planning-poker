@@ -180,6 +180,30 @@ function rememberDescHeight(height) {
   descHeightWrite = setTimeout(() => writeJson(PREFS_KEY, prefs), 300);
 }
 
+/**
+ * The height fix above saves the number, but not the drag itself: the native
+ * CSS `resize: vertical` handle is a browser gesture with no cancel/pause API,
+ * so replacing the node it's anchored to — which render() does every few
+ * seconds — kills the drag outright. A drag always starts with a pointerdown
+ * in the handle's corner, so that's watched for and used to hold off
+ * replacing #panel-story until the pointer comes back up.
+ */
+let descResizing = false;
+
+document.addEventListener("pointerdown", (event) => {
+  const desc = event.target.closest(".story-desc");
+  if (!desc) return;
+  const rect = desc.getBoundingClientRect();
+  const inHandleCorner = rect.right - event.clientX < 20 && rect.bottom - event.clientY < 20;
+  if (inHandleCorner) descResizing = true;
+});
+window.addEventListener("pointerup", () => {
+  descResizing = false;
+});
+window.addEventListener("pointercancel", () => {
+  descResizing = false;
+});
+
 /* ---------- Auth ---------- */
 
 async function refreshAuth() {
@@ -473,7 +497,7 @@ function render() {
   const descBefore = $(".story-desc");
   const descScroll = descBefore?.scrollTop ?? 0;
   if (descBefore) rememberDescHeight(descBefore.offsetHeight);
-  if (sideTab === "story") setHtml($("#panel-story"), renderStoryPanel(room, ctx));
+  if (sideTab === "story" && !descResizing) setHtml($("#panel-story"), renderStoryPanel(room, ctx));
   if (sideTab === "people") setHtml($("#panel-people"), renderPeoplePanel(room, ctx));
   if (sideTab === "history") setHtml($("#panel-history"), renderHistoryPanel(room, ctx));
   if (panel) panel.scrollTop = scroll;

@@ -51,6 +51,56 @@ export function htmlToText(html) {
   return (div.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+/**
+ * Same tag set the rich-text story editor offers and .story-desc knows how to
+ * render. Anything else — scripts, styles, event handlers, embeds pasted from
+ * elsewhere — is stripped before the HTML is stored or shown to anyone else
+ * in the room.
+ */
+const RTE_ALLOWED_TAGS = new Set([
+  "P", "BR", "STRONG", "B", "EM", "I", "U", "S", "STRIKE",
+  "UL", "OL", "LI", "A", "BLOCKQUOTE", "H3", "H4", "CODE", "PRE", "HR",
+]);
+
+/** Tags removed together with their contents, rather than unwrapped. */
+const RTE_STRIP_ENTIRELY = new Set([
+  "SCRIPT", "STYLE", "IFRAME", "OBJECT", "EMBED", "SVG", "IMG",
+  "VIDEO", "AUDIO", "FORM", "INPUT", "BUTTON", "SELECT", "TEXTAREA", "LINK", "META",
+]);
+
+/** Keep only a safe subset of HTML — for rich-text input that may carry pasted markup. */
+export function sanitizeHtml(html) {
+  const template = document.createElement("template");
+  template.innerHTML = String(html ?? "");
+  const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_ELEMENT);
+  const toRemove = [];
+  const toUnwrap = [];
+  let node = walker.nextNode();
+  while (node) {
+    if (RTE_STRIP_ENTIRELY.has(node.tagName)) {
+      toRemove.push(node);
+    } else if (!RTE_ALLOWED_TAGS.has(node.tagName)) {
+      toUnwrap.push(node);
+    } else {
+      for (const attr of Array.from(node.attributes)) {
+        if (node.tagName === "A" && attr.name === "href" && /^(https?:|mailto:)/i.test(attr.value.trim())) continue;
+        node.removeAttribute(attr.name);
+      }
+      if (node.tagName === "A") {
+        node.setAttribute("target", "_blank");
+        node.setAttribute("rel", "noopener noreferrer");
+      }
+    }
+    node = walker.nextNode();
+  }
+  for (const dead of toRemove) dead.remove();
+  for (const wrapper of toUnwrap) {
+    while (wrapper.firstChild) wrapper.parentNode.insertBefore(wrapper.firstChild, wrapper);
+    wrapper.remove();
+  }
+  return template.innerHTML;
+}
+
 export function $(selector, root = document) {
   return root.querySelector(selector);
 }

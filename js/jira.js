@@ -495,18 +495,7 @@ export async function updateIssueFields(key, { summary, description }, config = 
     fields.summary = summary;
   }
   if (description !== undefined && description !== null) {
-    // Convert HTML description to Jira's ADF format if needed
-    // For now, send as plain text in the description field
-    fields.description = {
-      version: 1,
-      type: "doc",
-      content: [
-        {
-          type: "paragraph",
-          content: [{ type: "text", text: description || "" }],
-        },
-      ],
-    };
+    fields.description = htmlToAdf(description);
   }
 
   if (Object.keys(fields).length === 0) return true;
@@ -722,6 +711,99 @@ function plainTextToHtml(text) {
     .split(/\n{2,}/)
     .map((block) => `<p>${escapeHtml(block).replace(/\n/g, "<br>")}</p>`)
     .join("");
+}
+
+/**
+ * The reverse of adfToHtml, for the story description editor: turns the rich
+ * text a facilitator typed (already restricted to .story-desc's tag set by
+ * sanitizeHtml) back into an ADF document Jira's PUT /issue accepts.
+ */
+export function htmlToAdf(html) {
+  const template = document.createElement("template");
+  template.innerHTML = String(html || "");
+  const content = Array.from(template.content.childNodes).map(blockToAdf).filter(Boolean);
+  return { version: 1, type: "doc", content: content.length ? content : [{ type: "paragraph", content: [] }] };
+}
+
+function blockToAdf(node) {
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = node.textContent;
+    return text.trim() ? { type: "paragraph", content: [{ type: "text", text }] } : null;
+  }
+  if (node.nodeType !== Node.ELEMENT_NODE) return null;
+
+  switch (node.tagName) {
+    case "H3":
+      return { type: "heading", attrs: { level: 2 }, content: inlineToAdf(node.childNodes) };
+    case "H4":
+      return { type: "heading", attrs: { level: 3 }, content: inlineToAdf(node.childNodes) };
+    case "UL":
+      return { type: "bulletList", content: listItemsToAdf(node) };
+    case "OL":
+      return { type: "orderedList", content: listItemsToAdf(node) };
+    case "BLOCKQUOTE":
+      return { type: "blockquote", content: Array.from(node.childNodes).map(blockToAdf).filter(Boolean) };
+    case "PRE":
+      return { type: "codeBlock", content: [{ type: "text", text: node.textContent }] };
+    case "HR":
+      return { type: "rule" };
+    case "P":
+    default:
+      return { type: "paragraph", content: inlineToAdf(node.childNodes) };
+  }
+}
+
+function listItemsToAdf(list) {
+  return Array.from(list.children)
+    .filter((li) => li.tagName === "LI")
+    .map((li) => ({ type: "listItem", content: [{ type: "paragraph", content: inlineToAdf(li.childNodes) }] }));
+}
+
+function inlineToAdf(nodes) {
+  const out = [];
+  for (const node of Array.from(nodes)) out.push(...inlineNodeToAdf(node, []));
+  return out;
+}
+
+function inlineNodeToAdf(node, marks) {
+  if (node.nodeType === Node.TEXT_NODE) {
+    return node.textContent ? [{ type: "text", text: node.textContent, ...(marks.length ? { marks } : {}) }] : [];
+  }
+  if (node.nodeType !== Node.ELEMENT_NODE) return [];
+
+  if (node.tagName === "BR") return [{ type: "hardBreak" }];
+
+  const nextMarks = [...marks];
+  switch (node.tagName) {
+    case "STRONG":
+    case "B":
+      nextMarks.push({ type: "strong" });
+      break;
+    case "EM":
+    case "I":
+      nextMarks.push({ type: "em" });
+      break;
+    case "U":
+      nextMarks.push({ type: "underline" });
+      break;
+    case "S":
+    case "STRIKE":
+      nextMarks.push({ type: "strike" });
+      break;
+    case "CODE":
+      nextMarks.push({ type: "code" });
+      break;
+    case "A": {
+      const href = node.getAttribute("href");
+      if (href) nextMarks.push({ type: "link", attrs: { href } });
+      break;
+    }
+    default:
+      break;
+  }
+  const out = [];
+  for (const child of Array.from(node.childNodes)) out.push(...inlineNodeToAdf(child, nextMarks));
+  return out;
 }
 
 /** Plain-text rendering of ADF, used for exports and tests. */

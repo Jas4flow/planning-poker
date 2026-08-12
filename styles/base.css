@@ -272,6 +272,67 @@ textarea {
   color: var(--text-faint);
 }
 
+/* ---------- Rich text editor ---------- */
+
+.rte {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--input-bg);
+  overflow: hidden;
+}
+
+.rte__toolbar {
+  display: flex;
+  gap: var(--sp-1);
+  padding: var(--sp-1);
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--surface-sunken);
+}
+
+.rte__btn {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 var(--sp-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.rte__btn:hover {
+  border-color: var(--line-strong);
+  background: var(--input-bg);
+}
+
+/* Higher specificity than .story-desc (room.css) so the modal editor doesn't
+   inherit the sidebar preview's fixed height and resize handle. */
+.rte .rte__editor {
+  height: auto;
+  min-height: 120px;
+  max-height: 40vh;
+  overflow: auto;
+  resize: none;
+  padding: var(--sp-2) var(--sp-3);
+  outline: none;
+  border: 0;
+}
+
+.rte__editor:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-faint);
+}
+
+.rte .rte__editor:focus {
+  box-shadow: none;
+}
+
+.rte:has(.rte__editor:focus) {
+  border-color: var(--brand-orange);
+  box-shadow: 0 0 0 3px var(--brand-orange-soft);
+}
+
 .check {
   display: flex;
   align-items: flex-start;
