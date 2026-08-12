@@ -116,7 +116,9 @@ export function openAddStoryFromJira({ store, activate = true }) {
     }
 
     if (!failed.length && !skipped.length) {
-      closeModal();
+      // Show success message for 1.5 seconds before auto-closing
+      handle.message("✓ All stories added", "ok");
+      setTimeout(() => closeModal(), 1500);
       return;
     }
 
@@ -157,12 +159,17 @@ export function openManualStory({ store, story = null }) {
         placeholder: "CUMA-123",
         hint: "Link a Jira issue so the estimate can be written back.",
       })}`,
-    footer: `
+    footer: editing
+      ? `
       <button class="btn" type="button" data-modal-close>Cancel</button>
-      <button class="btn btn--primary" type="button" data-save>${editing ? "Save" : "Add story"}</button>`,
+      <button class="btn btn--secondary" type="button" data-save-local>Save local</button>
+      <button class="btn btn--primary" type="button" data-save-jira>Save & send to Jira</button>`
+      : `
+      <button class="btn" type="button" data-modal-close>Cancel</button>
+      <button class="btn btn--primary" type="button" data-save>Add story</button>`,
   });
 
-  handle.footer.querySelector("[data-save]").addEventListener("click", () => {
+  const saveHandler = () => {
     const title = handle.body.querySelector("#story-title").value.trim();
     if (!title) {
       handle.message("Give the story a heading.", "warn");
@@ -188,6 +195,61 @@ export function openManualStory({ store, story = null }) {
       store.dispatch({ type: "SET_ACTIVE_STORY", id: created.id });
     }
     closeModal();
+  };
+
+  // Add or edit: single save button
+  if (!editing) {
+    handle.footer.querySelector("[data-save]").addEventListener("click", saveHandler);
+    return handle;
+  }
+
+  // Edit mode: two save buttons
+  handle.footer.querySelector("[data-save-local]").addEventListener("click", saveHandler);
+
+  handle.footer.querySelector("[data-save-jira]").addEventListener("click", async () => {
+    const title = handle.body.querySelector("#story-title").value.trim();
+    if (!title) {
+      handle.message("Give the story a heading.", "warn");
+      return;
+    }
+    const description = textToHtml(handle.body.querySelector("#story-desc").value);
+    const rawKey = handle.body.querySelector("#story-key").value.trim();
+    const key = rawKey ? jira.parseIssueRef(rawKey) : null;
+    if (rawKey && !key) {
+      handle.message(`"${rawKey}" is not a Jira issue key.`, "warn");
+      return;
+    }
+
+    // Save locally first
+    store.dispatch({
+      type: "UPDATE_STORY",
+      id: story.id,
+      patch: { title, description, key, url: key ? jira.issueUrl(key) : null },
+    });
+
+    // Then sync to Jira if the story has a key
+    if (key) {
+      handle.busy(true, "Updating Jira…");
+      try {
+        // Extract plain text from HTML description for Jira
+        const plainDescription = htmlToText(description);
+        await jira.updateIssueFields(key, {
+          summary: title,
+          description: plainDescription,
+        });
+        handle.message(`✓ Updated ${key} in Jira`, "ok");
+        setTimeout(() => closeModal(), 500);
+      } catch (error) {
+        handle.busy(false);
+        const message = error?.message || String(error);
+        handle.message(
+          `Could not update Jira: ${message}`,
+          error?.kind === "config" ? "warn" : "danger"
+        );
+      }
+    } else {
+      closeModal();
+    }
   });
 
   return handle;

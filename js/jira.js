@@ -185,31 +185,57 @@ export function parseIssueRef(input) {
 
 /**
  * Expand a range notation like "CUMA-156--158" to ["CUMA-156", "CUMA-157", "CUMA-158"]
+ * or "CUMA-135--CUMA-140" to ["CUMA-135", "CUMA-136", ..., "CUMA-140"]
  * Returns null if the input is not a valid range pattern.
  */
 function expandIssueRange(input) {
   const text = String(input || "").trim();
-  // Match pattern: PROJECT-NUMBER--NUMBER (e.g., CUMA-156--158)
-  const rangeMatch = text.match(/^([A-Za-z][A-Za-z0-9_]*)-(\d+)--(\d+)$/);
-  if (!rangeMatch) return null;
+  
+  // Match pattern 1: PROJECT-NUMBER--NUMBER (e.g., CUMA-156--158)
+  const rangeMatch1 = text.match(/^([A-Za-z][A-Za-z0-9_]*)-(\d+)--(\d+)$/);
+  if (rangeMatch1) {
+    const [, project, startStr, endStr] = rangeMatch1;
+    const startNum = parseInt(startStr, 10);
+    const endNum = parseInt(endStr, 10);
 
-  const [, project, startStr, endStr] = rangeMatch;
-  const startNum = parseInt(startStr, 10);
-  const endNum = parseInt(endStr, 10);
+    if (startNum > endNum) return null; // Invalid range (start > end)
+    if (endNum - startNum > 1000) return null; // Prevent excessively large ranges
 
-  if (startNum > endNum) return null; // Invalid range (start > end)
-  if (endNum - startNum > 1000) return null; // Prevent excessively large ranges
-
-  // Generate all keys in the range
-  const range = [];
-  for (let i = startNum; i <= endNum; i++) {
-    range.push(`${project.toUpperCase()}-${i}`);
+    // Generate all keys in the range
+    const range = [];
+    for (let i = startNum; i <= endNum; i++) {
+      range.push(`${project.toUpperCase()}-${i}`);
+    }
+    return range;
   }
-  return range;
+
+  // Match pattern 2: PROJECT-NUMBER--PROJECT-NUMBER (e.g., CUMA-135--CUMA-140)
+  const rangeMatch2 = text.match(/^([A-Za-z][A-Za-z0-9_]*)-(\d+)--([A-Za-z][A-Za-z0-9_]*)-(\d+)$/);
+  if (rangeMatch2) {
+    const [, project1, startStr, project2, endStr] = rangeMatch2;
+    
+    // Both must be the same project
+    if (project1.toUpperCase() !== project2.toUpperCase()) return null;
+    
+    const startNum = parseInt(startStr, 10);
+    const endNum = parseInt(endStr, 10);
+
+    if (startNum > endNum) return null; // Invalid range (start > end)
+    if (endNum - startNum > 1000) return null; // Prevent excessively large ranges
+
+    // Generate all keys in the range
+    const range = [];
+    for (let i = startNum; i <= endNum; i++) {
+      range.push(`${project1.toUpperCase()}-${i}`);
+    }
+    return range;
+  }
+
+  return null;
 }
 
 /**
- * Several references at once: `CUMA-130, CUMA-131`, ranges like `CUMA-156--158`,
+ * Several references at once: `CUMA-130, CUMA-131`, ranges like `CUMA-156--158` or `CUMA-135--CUMA-140`,
  * or a list of URLs, separated by commas, semicolons, newlines or spaces.
  * Duplicates are dropped, order kept.
  */
@@ -217,7 +243,7 @@ export function parseIssueRefs(input) {
   const seen = new Set();
   const keys = [];
   for (const chunk of String(input || "").split(/[\s,;]+/)) {
-    // Try to expand as a range first (e.g., CUMA-156--158)
+    // Try to expand as a range first (e.g., CUMA-156--158 or CUMA-135--CUMA-140)
     const range = expandIssueRange(chunk);
     if (range) {
       for (const key of range) {
@@ -447,6 +473,42 @@ export async function updateStoryPoints(key, value, config = loadConfig()) {
     { config }
   );
   return { key, points: fresh?.fields?.[config.pointsField] ?? null };
+}
+
+/**
+ * Update a Jira issue's summary (heading) and/or description.
+ * Used when editing a story and pushing changes back to Jira.
+ */
+export async function updateIssueFields(key, { summary, description }, config = loadConfig()) {
+  if (config.mock) return mock.updateIssueFields?.(key, { summary, description }, config) ?? true;
+
+  const fields = {};
+  if (summary !== undefined && summary !== null) {
+    fields.summary = summary;
+  }
+  if (description !== undefined && description !== null) {
+    // Convert HTML description to Jira's ADF format if needed
+    // For now, send as plain text in the description field
+    fields.description = {
+      version: 1,
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: description || "" }],
+        },
+      ],
+    };
+  }
+
+  if (Object.keys(fields).length === 0) return true;
+
+  await request(`/rest/api/3/issue/${encodeURIComponent(key)}`, {
+    method: "PUT",
+    body: { fields },
+    config,
+  });
+  return true;
 }
 
 export async function searchIssues(jql, config = loadConfig(), maxResults = 25) {
