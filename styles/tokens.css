@@ -75,6 +75,9 @@
   --radius-card: 8px;
   --header-height: 64px;
   --sidebar-width: 360px;
+  /* How little room the board may be left with when the panel is dragged wide.
+     The one source of truth — app.js reads this back when clamping. */
+  --stage-min: 280px;
   --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 

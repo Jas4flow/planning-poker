@@ -71,12 +71,20 @@ function applyTheme() {
 /* ---------- Panel width ---------- */
 
 const SIDE_MIN = 300;
-const SIDE_MAX = 900;
-/** The table needs this much room whatever the panel is doing. */
-const STAGE_MIN = 420;
+const SIDE_MAX = 1400;
+
+/**
+ * How little room the board may be left with. Read from the stylesheet rather
+ * than repeated here: the same figure caps `grid-template-columns`, and two
+ * copies of one limit drift apart the moment either is tuned.
+ */
+function stageMin() {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue("--stage-min");
+  return Number.parseInt(raw, 10) || 280;
+}
 
 function sidebarBounds() {
-  return { min: SIDE_MIN, max: Math.max(SIDE_MIN, Math.min(SIDE_MAX, window.innerWidth - STAGE_MIN)) };
+  return { min: SIDE_MIN, max: Math.max(SIDE_MIN, Math.min(SIDE_MAX, window.innerWidth - stageMin())) };
 }
 
 /**

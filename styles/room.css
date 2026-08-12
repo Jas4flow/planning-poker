@@ -35,13 +35,13 @@
 /*
  * The panel width is a custom property so dragging it only has to move one
  * value. The `min()` is the guarantee: whatever width was dragged or restored
- * from a previous, wider window, the table beside it keeps 420px. The script
- * clamps too, but a layout invariant belongs in the layout — it must hold on a
- * window resize the script never hears about.
+ * from a previous, wider window, the board beside it keeps --stage-min. The
+ * script clamps too, but a layout invariant belongs in the layout — it must
+ * hold on a window resize the script never hears about.
  */
 .room__body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) min(var(--sidebar-width), calc(100% - 420px));
+  grid-template-columns: minmax(0, 1fr) min(var(--sidebar-width), calc(100% - var(--stage-min)));
   min-height: 0;
 }
 
@@ -729,9 +729,17 @@ body.is-resizing {
   font-size: var(--fs-md);
 }
 
+/*
+ * Jira descriptions run long. The box keeps its own scrollbar so the backlog
+ * below stays reachable, but it is resizable: drag the bottom-right corner to
+ * open it up for a big table or a long spec, without losing the list.
+ */
 .story-desc {
-  max-height: 260px;
-  overflow-y: auto;
+  height: 300px;
+  min-height: 120px;
+  max-height: 70vh;
+  overflow: auto;
+  resize: vertical;
   padding-right: var(--sp-2);
   font-size: var(--fs-sm);
   color: var(--text-muted);
