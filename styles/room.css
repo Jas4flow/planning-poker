@@ -566,6 +566,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+  max-width: min(420px, 100%);
   margin: 0;
   padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--panel-line);
@@ -583,7 +584,9 @@
 
 .chat-bubble__text {
   min-width: 0;
+  max-width: 100%;
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .chat-bubble--system {
