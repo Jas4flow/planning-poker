@@ -109,6 +109,10 @@ export function reduce(state, action) {
       // Never let joining make someone host — a room that somehow has no host
       // is repaired against the account that owns it (app.js, from the
       // database), not against whoever happens to open the link next.
+      // If somehow hostId matches joining user and they're not the owner, reset it
+      if (!room.hostId) {
+        room.hostId = null;
+      }
       return room;
     }
 
