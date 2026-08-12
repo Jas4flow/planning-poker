@@ -147,9 +147,8 @@ function results(room, ctx, stats) {
           <div class="dist__col${bucket.isTop ? " dist__col--top" : ""}">
             <span class="dist__count">${bucket.count}</span>
             <div class="dist__bar" style="height:${Math.round((bucket.count / tallest) * 45) + 6}px"></div>
-            <div class="dist__card" style="display:flex; align-items:center; justify-content:center; gap:8px;">
+            <div class="dist__card">
               ${escapeHtml(bucket.card)}
-              <button type="button" data-act="edit-estimate" title="Set as estimate" style="background:none; border:none; cursor:pointer; font-size:16px; padding:0;">✏️</button>
             </div>
             <span class="dist__voters">${bucket.voters.map((n) => escapeHtml(n)).join(", ")}</span>
           </div>`
@@ -174,7 +173,7 @@ function acceptRow(story, stats, ctx) {
   return `
     <div class="row row--tight" style="flex-wrap:wrap; justify-content:center">
       ${
-        suggestion
+        ctx.isOwner && suggestion
           ? `<button class="btn btn--teal" type="button" data-act="accept-estimate" data-value="${escapeHtml(suggestion)}">
                Accept ${escapeHtml(suggestion)} for this story
              </button>`
