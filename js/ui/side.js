@@ -91,11 +91,6 @@ function storyNow(story, ctx, room) {
                  ${story.votingEnabled ? "Voting open" : "Voting paused"}
                </span>`
         }
-        ${
-          !ctx.isHost && !hasSelectedStory(room, ctx.meId)
-            ? `<button class="btn btn--sm btn--primary" type="button" data-act="select-story" data-id="${story.id}">Join this story</button>`
-            : ""
-        }
         <button class="btn btn--sm btn--primary" type="button" data-act="update-points">Update story point</button>
         ${
           story.key

@@ -210,8 +210,8 @@ async function enterRoom(roomId) {
   store.dispatch({ type: "JOIN", id: me.id, name: me.name, role: myRole });
   void db.touchMembership(roomId, { display_name: me.name });
   const updatedRoom = store.getState();
-  if (updatedRoom.hostId && updatedRoom.hostId !== me.id && !room.participants[me.id]) {
-    console.log(`Guest ${me.name} joined as ${myRole || "voter"}`);
+  if (updatedRoom.activeStoryId && me.id !== updatedRoom.hostId) {
+    store.dispatch({ type: "SELECT_STORY", id: me.id, storyId: updatedRoom.activeStoryId });
   }
   render();
 }
