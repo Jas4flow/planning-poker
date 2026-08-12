@@ -149,7 +149,7 @@ function results(room, ctx, stats) {
             <div class="dist__bar" style="height:${Math.round((bucket.count / tallest) * 45) + 6}px"></div>
             <div class="dist__card" style="display:flex; align-items:center; justify-content:center; gap:8px;">
               ${escapeHtml(bucket.card)}
-              <button type="button" data-act="edit-estimate" title="Set as estimate" style="background:none; border:none; cursor:pointer; font-size:16px; padding:0;">✏️</button>
+              ${ctx.isOwner ? `<button type="button" data-act="edit-estimate" title="Set as estimate" style="background:none; border:none; cursor:pointer; font-size:16px; padding:0;">✏️</button>` : ""}
             </div>
             <span class="dist__voters">${bucket.voters.map((n) => escapeHtml(n)).join(", ")}</span>
           </div>`
@@ -180,7 +180,11 @@ function acceptRow(story, stats, ctx) {
              </button>`
           : ""
       }
-      <button class="btn" type="button" data-act="edit-estimate">Choose another value</button>
+      ${
+        ctx.isOwner
+          ? `<button class="btn" type="button" data-act="edit-estimate">Choose another value</button>`
+          : ""
+      }
       ${
         ctx.isOwner
           ? `<button class="btn btn--primary" type="button" data-act="update-points">
