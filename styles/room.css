@@ -41,8 +41,9 @@
 /* ---------- Stage ---------- */
 
 .stage {
+  position: relative; /* anchors the chat feed */
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto auto;
   min-height: 0;
   background: radial-gradient(circle at 50% 30%, var(--surface) 0%, var(--page-bg) 70%);
 }
@@ -447,6 +448,102 @@
 .reactions button:hover {
   border-color: var(--line-strong);
   background: var(--surface-sunken);
+}
+
+/* ---------- Chat ---------- */
+
+.chat-bar-host {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 var(--sp-4) var(--sp-3);
+  background: var(--panel-bg);
+}
+
+.chat-bar-host:empty {
+  display: none;
+}
+
+.chat-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.chat-bar__emoji {
+  display: flex;
+  gap: var(--sp-1);
+}
+
+.chat-bar__emoji button {
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  cursor: pointer;
+  font-size: var(--fs-sm);
+}
+
+.chat-bar__emoji button:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-sunken);
+}
+
+.chat-bar__input {
+  width: 220px;
+}
+
+/* One message at a time, top right of the stage, clear of the sidebar. */
+.chat-feed {
+  position: absolute;
+  top: var(--sp-3);
+  right: var(--sp-4);
+  z-index: 5;
+  max-width: min(420px, 60%);
+  pointer-events: none;
+}
+
+.chat-bubble {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--panel-line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  font-size: var(--fs-sm);
+  animation: chat-in 160ms var(--ease);
+}
+
+.chat-bubble__who {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.chat-bubble__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.chat-bubble--system {
+  display: block;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+@keyframes chat-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-bubble {
+    animation: none;
+  }
 }
 
 /* ---------- Sidebar ---------- */

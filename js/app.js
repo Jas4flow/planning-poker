@@ -31,6 +31,7 @@ import { downloadCsv, downloadJson } from "./export.js";
 import { renderStage } from "./ui/seats.js";
 import { renderDeck } from "./ui/deck.js";
 import { renderStoryPanel, renderPeoplePanel, renderHistoryPanel } from "./ui/side.js";
+import { createChatFeed, renderChatBar } from "./ui/chat.js";
 import { mountLanding, renderLanding, renderNewPasswordCard } from "./ui/landing.js";
 import { openModal, closeModal, confirmDialog, promptDialog, isModalOpen } from "./ui/modals.js";
 import { openSettings } from "./ui/settings.js";
@@ -181,7 +182,17 @@ async function enterRoom(roomId) {
   cleanup.push(transport.onRemote((state, version) => store.adopt(state, version)));
   cleanup.push(store.subscribe(() => render()));
 
-  session = { roomId, meta, transport, store, cleanup };
+  // The composer is mounted once, not with the deck: render() replaces the deck
+  // on every state change and would wipe text from under the person typing it.
+  const chat = createChatFeed($("#chat-feed"));
+  setHtml($("#chat-bar-host"), renderChatBar());
+  cleanup.push(transport.onChat((message) => chat.push(message)));
+  cleanup.push(() => {
+    chat.clear();
+    setHtml($("#chat-bar-host"), "");
+  });
+
+  session = { roomId, meta, transport, store, chat, cleanup };
 
   let initial;
   try {
@@ -456,7 +467,7 @@ const actions = {
   },
 
   /* voting */
-  vote: (el) => session.store.dispatch({ type: "VOTE", id: me.id, card: el.dataset.card }),
+  vote: (el) => castCard(el.dataset.card),
   reveal: () => {
     const room = session.store.getState();
     if (room && room.hostId === me.id) {
@@ -472,6 +483,14 @@ const actions = {
     }
   },
   react: (el) => session.store.dispatch({ type: "REACT", id: me.id, emoji: el.dataset.emoji }),
+
+  /* chat */
+  "chat-emoji": (el) => {
+    const input = $("#chat-input");
+    if (!input) return;
+    input.value = `${input.value}${el.dataset.emoji}`.slice(0, input.maxLength);
+    input.focus();
+  },
   "toggle-role": () => {
     const room = session.store.getState();
     const role = room.participants[me.id]?.role === "spectator" ? "voter" : "spectator";
@@ -597,7 +616,7 @@ const actions = {
     handle.body.querySelectorAll("[data-value]").forEach((button) => {
       button.addEventListener("click", () => {
         const card = button.dataset.value;
-        session.store.dispatch({ type: "VOTE", id: me.id, card });
+        castCard(card);
         closeModal();
         toast(`Your card is now ${card}.`, "ok");
       });
@@ -696,6 +715,30 @@ function suggestionFor(room) {
   return stats.suggestion ?? undefined;
 }
 
+/**
+ * Show a message here and fire it at everyone else. The local copy is not an
+ * optimisation — broadcasts do not echo to the sender, so without it you would
+ * never see your own line.
+ */
+function say(message) {
+  if (!session) return;
+  session.chat.push(message);
+  void session.transport.sendChat(message);
+}
+
+/**
+ * Put a card down. Once the cards are face up a change is visible to everyone,
+ * so it gets announced — otherwise the average quietly moves and nobody knows
+ * why.
+ */
+function castCard(card) {
+  const before = session.store.getState();
+  const after = session.store.dispatch({ type: "VOTE", id: me.id, card });
+  if (!before.revealed || after === before) return;
+  if (before.votes[me.id] === card) return;
+  say({ kind: "system", text: `${me.name} changed the estimation` });
+}
+
 /* ---------- Event wiring ---------- */
 
 document.addEventListener("click", (event) => {
@@ -706,6 +749,19 @@ document.addEventListener("click", (event) => {
   if (!session && !GLOBAL_ACTIONS.includes(target.dataset.act)) return;
   event.preventDefault();
   handler(target, event);
+});
+
+/* Chat: Enter or Send, then straight back to an empty box. */
+document.addEventListener("submit", (event) => {
+  const form = event.target.closest("#chat-bar");
+  if (!form) return;
+  event.preventDefault();
+  if (!session) return;
+  const input = form.querySelector("#chat-input");
+  const text = input.value.trim();
+  input.value = "";
+  if (!text) return;
+  say({ name: me.name, text });
 });
 
 document.addEventListener("change", (event) => {
@@ -790,9 +846,11 @@ document.addEventListener("keydown", (event) => {
   if (/^[0-9]$/.test(event.key)) {
     const index = event.key === "0" ? 9 : Number(event.key) - 1;
     const card = deckCards(room)[index];
-    if (card && !ctx.isSpectator && !room.revealed && activeStory(room)) {
+    // No `revealed` guard: the deck stays clickable after the reveal, so the
+    // shortcut for the same click has to work then too.
+    if (card && !ctx.isSpectator && activeStory(room)) {
       event.preventDefault();
-      session.store.dispatch({ type: "VOTE", id: me.id, card });
+      castCard(card);
     }
     return;
   }

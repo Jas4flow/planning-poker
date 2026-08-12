@@ -9,14 +9,23 @@
  *
  * Everything below goes through RLS. A client asking for a room it was not
  * invited to gets nothing back, whatever it sends.
+ *
+ * Chat rides the same Realtime channel as a broadcast. Broadcasts are relayed
+ * between the connected clients and never touch a table, which is the whole
+ * point: a message exists only in the browsers that were listening when it was
+ * sent. Nothing to store, nothing to delete, nothing to leak later.
  */
 
 import { normalizeRoom } from "./store.js";
 import { client } from "./supabase.js";
 
+const CHAT_EVENT = "chat";
+
 export function createSupabaseTransport(roomId) {
   const handlers = new Set();
+  const chatHandlers = new Set();
   let channel = null;
+  let joining = null;
   let seenVersion = 0;
 
   function emit(state, version) {
@@ -66,35 +75,72 @@ export function createSupabaseTransport(roomId) {
 
     onRemote(handler) {
       handlers.add(handler);
-      if (!channel) {
-        channel = null;
-        subscribe();
-      }
+      void ensureChannel();
       return () => handlers.delete(handler);
+    },
+
+    /** Listen for chat sent by the other clients in this room. */
+    onChat(handler) {
+      chatHandlers.add(handler);
+      void ensureChannel();
+      return () => chatHandlers.delete(handler);
+    },
+
+    /**
+     * Fire a message at whoever is connected right now. Nothing is stored, so
+     * there is nothing to catch up on — a client that joins later never sees it.
+     * Failure is not worth reporting: a lost chat line is not lost work.
+     */
+    async sendChat(message) {
+      try {
+        const ch = await ensureChannel();
+        await ch.send({ type: "broadcast", event: CHAT_EVENT, payload: message });
+      } catch {
+        /* offline, or the channel never came up — the sender still saw it locally */
+      }
     },
 
     close() {
       handlers.clear();
+      chatHandlers.clear();
       if (channel) {
         channel.unsubscribe();
         channel = null;
       }
+      joining = null;
     },
   };
 
+  function ensureChannel() {
+    if (!joining) joining = subscribe();
+    return joining;
+  }
+
   async function subscribe() {
     const supabase = await client();
-    channel = supabase
-      .channel(`room:${roomId}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "pp_rooms", filter: `id=eq.${roomId}` },
-        (payload) => {
-          const row = payload.new;
-          if (!row || row.version <= seenVersion) return;
-          emit(row.state, row.version);
-        }
-      )
-      .subscribe();
+    return new Promise((resolve) => {
+      channel = supabase
+        .channel(`room:${roomId}`)
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "public", table: "pp_rooms", filter: `id=eq.${roomId}` },
+          (payload) => {
+            const row = payload.new;
+            if (!row || row.version <= seenVersion) return;
+            emit(row.state, row.version);
+          }
+        )
+        .on("broadcast", { event: CHAT_EVENT }, ({ payload }) => {
+          if (!payload) return;
+          for (const handler of chatHandlers) handler(payload);
+        })
+        // Settle on any terminal status, never only on success — `sendChat`
+        // awaits this, and a promise that can hang forever is a leak.
+        .subscribe((status) => {
+          if (status === "SUBSCRIBED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+            resolve(channel);
+          }
+        });
+    });
   }
 }
