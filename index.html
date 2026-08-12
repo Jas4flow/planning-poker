@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Planning Poker · 4flow</title>
+    <meta
+      name="description"
+      content="Story point estimation for refinement sessions, with Jira issues pulled in and estimates written back."
+    />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='5' fill='%23003E52'/%3E%3Ctext x='16' y='23' font-family='Helvetica,Arial' font-size='19' font-weight='bold' text-anchor='middle' fill='%23FE6B00'%3E4%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="styles/tokens.css" />
+    <link rel="stylesheet" href="styles/base.css" />
+    <link rel="stylesheet" href="styles/room.css" />
+  </head>
+  <body>
+    <!-- ---------- Landing ---------- -->
+    <main class="landing" id="screen-landing" hidden>
+      <header class="landing__bar">
+        <span class="wordmark">
+          <span class="wordmark__four">4</span>flow
+          <span class="wordmark__rule" aria-hidden="true"></span>
+          <span class="wordmark__app">Planning Poker</span>
+        </span>
+        <div class="spacer"></div>
+        <span id="auth-status"></span>
+        <button class="btn btn--icon" type="button" data-act="toggle-theme" aria-label="Switch theme" title="Switch theme">◐</button>
+        <button class="btn btn--sm" type="button" data-act="settings" id="landing-jira" hidden>Jira settings</button>
+      </header>
+
+      <div class="landing__main">
+        <section class="hero">
+          <p class="eyebrow">Refinement, estimated together</p>
+          <h1 class="hero__title">Estimate the story,<br /><em>not the loudest voice.</em></h1>
+          <p class="hero__lead">
+            Pull a story straight out of Jira, let everyone pick a card in private, reveal them all at once, and
+            write the agreed estimate back to the issue in one click.
+          </p>
+          <ul class="hero__list">
+            <li>Jira summary and description on screen</li>
+            <li>Hidden votes until the reveal</li>
+            <li>Average, median and agreement</li>
+            <li>Story points written back to Jira</li>
+            <li>Fibonacci, T-shirt, powers of 2, custom</li>
+            <li>Round timer, spectators, CSV export</li>
+          </ul>
+          <div class="landing__deck" aria-hidden="true">
+            <span style="--i: 0">3</span><span style="--i: 1">5</span><span style="--i: 2">8</span>
+            <span style="--i: 3">13</span><span style="--i: 4">?</span>
+          </div>
+        </section>
+
+        <section class="panel landing__card" id="landing-card" aria-live="polite"></section>
+      </div>
+
+      <footer class="landing__foot">
+        Sessions live in Supabase · you only ever see sessions you created or were invited to ·
+        access is enforced by Postgres row level security, not by this page.
+      </footer>
+    </main>
+
+    <!-- ---------- Room ---------- -->
+    <main class="room" id="screen-room" hidden>
+      <header class="room__head" id="room-head"></header>
+      <div class="room__body">
+        <section class="stage">
+          <div class="table-area" id="table-area"></div>
+          <div class="deck" id="deck"></div>
+        </section>
+
+        <aside class="side" aria-label="Session details">
+          <div class="side__tabs" id="side-tabs" role="tablist">
+            <button class="side__tab" type="button" role="tab" data-tab="story" aria-selected="true" aria-controls="panel-story">Story</button>
+            <button class="side__tab" type="button" role="tab" data-tab="people" aria-selected="false" aria-controls="panel-people">People</button>
+            <button class="side__tab" type="button" role="tab" data-tab="history" aria-selected="false" aria-controls="panel-history">History</button>
+          </div>
+          <div class="side__panel" id="panel-story" role="tabpanel"></div>
+          <div class="side__panel" id="panel-people" role="tabpanel" hidden></div>
+          <div class="side__panel" id="panel-history" role="tabpanel" hidden></div>
+        </aside>
+      </div>
+    </main>
+
+    <div id="gate-host"></div>
+    <div id="modals"></div>
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+
+    <noscript>
+      <p style="padding: 24px">Planning Poker needs JavaScript enabled.</p>
+    </noscript>
+
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>

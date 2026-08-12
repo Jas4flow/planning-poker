@@ -1,0 +1,109 @@
+/* 4flow brand tokens. Values measured from 4flow.com.
+   Every colour in the app comes from this file — retune the palette here. */
+
+:root {
+  /* Brand */
+  --brand-orange: #fe6b00;
+  --brand-orange-dark: #d95a00;
+  --brand-orange-soft: #fff1e6;
+  --brand-teal-900: #003e52;
+  --brand-teal-700: #0d485b;
+  --brand-teal-500: #1c6b85;
+  --brand-teal-soft: #e8f1f4;
+
+  /* Neutrals */
+  --ink: #000000;
+  --ink-70: rgba(0, 0, 0, 0.7);
+  --ink-50: rgba(0, 0, 0, 0.5);
+  --ink-30: rgba(0, 0, 0, 0.3);
+  --surface: #ffffff;
+  --surface-muted: #f9f9f9;
+  --surface-sunken: #f1f2f3;
+  --line: rgba(0, 0, 0, 0.12);
+  --line-strong: rgba(0, 0, 0, 0.24);
+
+  /* Semantic */
+  --ok: #157f5b;
+  --ok-soft: #e6f4ef;
+  --warn: #a86000;
+  --warn-soft: #fff6e6;
+  --danger: #b3261e;
+  --danger-soft: #fdecea;
+  --info: var(--brand-teal-700);
+
+  /* Surfaces derived per theme */
+  --page-bg: var(--surface-muted);
+  --panel-bg: var(--surface);
+  --panel-line: var(--line);
+  --text: var(--ink);
+  --text-muted: var(--ink-70);
+  --text-faint: var(--ink-50);
+  --felt-bg: var(--brand-teal-900);
+  --felt-line: rgba(255, 255, 255, 0.14);
+  --felt-text: #ffffff;
+  --card-face: var(--surface);
+  --card-back: linear-gradient(150deg, var(--brand-teal-700), var(--brand-teal-900));
+  --input-bg: var(--surface);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.14);
+  --shadow-lift: 0 12px 28px rgba(0, 62, 82, 0.22);
+
+  /* Type */
+  --font: "Avenir Next LT Pro", "Avenir Next", "Segoe UI", Helvetica, Arial, sans-serif;
+  --fs-xs: 0.6875rem;
+  --fs-sm: 0.8125rem;
+  --fs-base: 0.9375rem;
+  --fs-md: 1.0625rem;
+  --fs-lg: 1.375rem;
+  --fs-xl: 1.875rem;
+  --fs-hero: clamp(2rem, 5vw, 3.25rem);
+  --lh-tight: 1.15;
+  --lh: 1.5;
+  --tracking-caps: 0.08em;
+
+  /* Space + shape */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+  --radius-sm: 3px;
+  --radius: 6px;
+  --radius-lg: 10px;
+  --radius-card: 8px;
+  --header-height: 64px;
+  --sidebar-width: 360px;
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+[data-theme="dark"] {
+  --page-bg: #06222c;
+  --panel-bg: #0b2f3c;
+  --panel-line: rgba(255, 255, 255, 0.12);
+  --text: #f4f7f8;
+  --text-muted: rgba(244, 247, 248, 0.72);
+  --text-faint: rgba(244, 247, 248, 0.5);
+  --line: rgba(255, 255, 255, 0.14);
+  --line-strong: rgba(255, 255, 255, 0.28);
+  --surface: #0b2f3c;
+  --surface-muted: #06222c;
+  --surface-sunken: #072832;
+  --felt-bg: #04191f;
+  --felt-line: rgba(255, 255, 255, 0.1);
+  --card-face: #123f4e;
+  --card-back: linear-gradient(150deg, #1c6b85, #04191f);
+  --input-bg: #072832;
+  --brand-orange-soft: rgba(254, 107, 0, 0.16);
+  --brand-teal-soft: rgba(28, 107, 133, 0.24);
+  --ok-soft: rgba(21, 127, 91, 0.22);
+  --warn-soft: rgba(168, 96, 0, 0.24);
+  --danger-soft: rgba(179, 38, 30, 0.24);
+  --ok: #4cc79b;
+  --warn: #ffb454;
+  --danger: #ff8a80;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 10px 28px rgba(0, 0, 0, 0.5);
+  --shadow-lift: 0 12px 28px rgba(0, 0, 0, 0.55);
+}

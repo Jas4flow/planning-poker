@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Planning Poker · tests</title>
+    <link rel="stylesheet" href="styles/tokens.css" />
+    <link rel="stylesheet" href="styles/base.css" />
+    <style>
+      body {
+        padding: var(--sp-6);
+      }
+      .results-list {
+        margin-top: var(--sp-4);
+        font-family: ui-monospace, Menlo, Consolas, monospace;
+        font-size: var(--fs-sm);
+      }
+      .t {
+        padding: 3px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .t--pass::before {
+        content: "PASS ";
+        color: var(--ok);
+        font-weight: 700;
+      }
+      .t--fail {
+        color: var(--danger);
+      }
+      .t--fail::before {
+        content: "FAIL ";
+        font-weight: 700;
+      }
+      .t__why {
+        display: block;
+        padding-left: 3ch;
+        color: var(--text-muted);
+      }
+      .group {
+        margin-top: var(--sp-5);
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <h1 style="font-size: var(--fs-xl)">Planning Poker — logic tests</h1>
+    <p class="muted">Pure functions only: decks, statistics, the store reducer, Jira parsing and export.</p>
+    <h2 id="summary" style="margin-top: var(--sp-5)">Running…</h2>
+    <div class="results-list" id="results"></div>
+
+    <script type="module">
+      import { cardToNumber, deckCards, parseCustomDeck, isSpecialCard } from "./js/decks.js";
+      import { computeStats, agreementPercent, suggestEstimate, validatePointValue } from "./js/stats.js";
+      import { createRoom, createStory, reduce, allVoted, castVotes, normalizeRoom, createStore } from "./js/store.js";
+      import {
+        parseIssueRef,
+        parseIssueRefs,
+        adfToHtml,
+        adfToText,
+        buildUrl,
+        normalizeProxy,
+        proxyProblem,
+        normalizeBaseUrl,
+        describeFailure,
+        toStory,
+      } from "./js/jira.js";
+      import { toCsv } from "./js/export.js";
+      import { remainingSeconds } from "./js/timer.js";
+      import { textToHtml } from "./js/util.js";
+
+      let passed = 0;
+      let failed = 0;
+      const out = document.getElementById("results");
+
+      function group(name) {
+        const el = document.createElement("div");
+        el.className = "group";
+        el.textContent = name;
+        out.appendChild(el);
+      }
+
+      function check(name, condition, why = "") {
+        const el = document.createElement("div");
+        const ok = Boolean(condition);
+        el.className = `t t--${ok ? "pass" : "fail"}`;
+        el.textContent = name;
+        if (!ok && why) {
+          const detail = document.createElement("span");
+          detail.className = "t__why";
+          detail.textContent = why;
+          el.appendChild(detail);
+        }
+        out.appendChild(el);
+        ok ? (passed += 1) : (failed += 1);
+      }
+
+      const eq = (name, actual, expected) =>
+        check(name, Object.is(actual, expected), `expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+
+      const deepEq = (name, actual, expected) =>
+        check(
+          name,
+          JSON.stringify(actual) === JSON.stringify(expected),
+          `expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`
+        );
+
+      /* ---------------- decks ---------------- */
+      group("decks");
+      eq("cardToNumber reads integers", cardToNumber("13"), 13);
+      eq("cardToNumber reads the half card", cardToNumber("½"), 0.5);
+      eq("cardToNumber rejects T-shirt sizes", cardToNumber("XL"), null);
+      eq("cardToNumber rejects the coffee card", cardToNumber("☕"), null);
+      check("? and coffee are special", isSpecialCard("?") && isSpecialCard("☕") && !isSpecialCard("5"));
+      deepEq("custom deck is used when set", deckCards({ deckId: "custom", customCards: ["a", "b"] }), ["a", "b"]);
+      deepEq("empty custom deck falls back", deckCards({ deckId: "custom", customCards: [] }).slice(0, 3), ["0", "1", "2"]);
+      deepEq("parseCustomDeck splits and dedupes", parseCustomDeck("1, 2 ,2,3"), ["1", "2", "3"]);
+
+      /* ---------------- statistics ---------------- */
+      group("statistics");
+      const FIB = ["0", "1", "2", "3", "5", "8", "13", "21", "?", "☕"];
+
+      const mixed = computeStats(
+        [
+          { name: "A", card: "3" },
+          { name: "B", card: "5" },
+          { name: "C", card: "5" },
+          { name: "D", card: "?" },
+        ],
+        FIB
+      );
+      eq("average ignores ?", mixed.average, (3 + 5 + 5) / 3);
+      eq("median of 3,5,5", mixed.median, 5);
+      deepEq("mode is the most picked card", mixed.modes, ["5"]);
+      eq("specials counted separately", mixed.specials, 1);
+      eq("total counts every card cast", mixed.total, 4);
+      eq("range low", mixed.min, 3);
+      eq("range high", mixed.max, 5);
+      check("no consensus when cards differ", mixed.consensus === false);
+      eq("suggestion snaps to a deck card", mixed.suggestion, "5");
+
+      const unanimous = computeStats(
+        [
+          { name: "A", card: "8" },
+          { name: "B", card: "8" },
+        ],
+        FIB
+      );
+      eq("agreement is 100% when unanimous", unanimous.agreement, 100);
+      check("consensus flag set", unanimous.consensus === true);
+
+      const split = computeStats(
+        [
+          { name: "A", card: "0" },
+          { name: "B", card: "21" },
+        ],
+        FIB
+      );
+      check("agreement drops when far apart", split.agreement < 40, `got ${split.agreement}`);
+      check("agreement never negative", split.agreement >= 0);
+
+      eq("single voter agrees with themselves", agreementPercent([{ name: "A", card: "5" }], FIB), 100);
+      eq("no votes gives no agreement", agreementPercent([], FIB), null);
+
+      const onlySpecials = computeStats([{ name: "A", card: "?" }], FIB);
+      eq("all-? round has no average", onlySpecials.average, null);
+      eq("all-? round suggests the mode", onlySpecials.suggestion, "?");
+
+      const tshirt = computeStats(
+        [
+          { name: "A", card: "M" },
+          { name: "B", card: "L" },
+          { name: "C", card: "L" },
+        ],
+        ["XS", "S", "M", "L", "XL", "?"]
+      );
+      eq("T-shirt round has no average", tshirt.average, null);
+      eq("T-shirt round suggests the mode", tshirt.suggestion, "L");
+
+      const outlying = computeStats(
+        [
+          { name: "A", card: "3" },
+          { name: "B", card: "3" },
+          { name: "C", card: "3" },
+          { name: "D", card: "21" },
+        ],
+        FIB
+      );
+      deepEq("lone far vote is an outlier", outlying.outliers, ["21"]);
+
+      eq("suggestEstimate ties round up", suggestEstimate({ average: 4, modes: [], cards: FIB }), "5");
+
+      check("validate rejects empty", validatePointValue("", FIB).ok === false);
+      check("validate rejects words", validatePointValue("huge", FIB).ok === false);
+      check("validate rejects negatives", validatePointValue("-3", FIB).ok === false);
+      eq("validate returns a number", validatePointValue("8", FIB).value, 8);
+      check("validate warns about off-deck values", Boolean(validatePointValue("7", FIB).warning));
+      check(
+        "validate warns that T-shirt sizes are not numbers",
+        validatePointValue("L", ["S", "M", "L"]).ok === true && Boolean(validatePointValue("L", ["S", "M", "L"]).warning)
+      );
+
+      /* ---------------- store ---------------- */
+      group("store reducer");
+      const base = createRoom({ id: "r1", name: "Test", host: { id: "u1", name: "Ann" }, at: 1000 });
+      eq("creator becomes host", base.hostId, "u1");
+
+      let room = reduce(base, { type: "JOIN", id: "u2", name: "Bo", at: 1100 });
+      room = reduce(room, { type: "JOIN", id: "u3", name: "Cy", role: "spectator", at: 1200 });
+      eq("three people in the room", Object.keys(room.participants).length, 3);
+      eq("host unchanged by joins", room.hostId, "u1");
+
+      const story = createStory({ title: "Story A", at: 1300 });
+      room = reduce(room, { type: "ADD_STORY", story, at: 1300 });
+      eq("first story goes on the table", room.activeStoryId, story.id);
+      check("stories start with voting disabled", room.stories[0].votingEnabled === false);
+
+      room = reduce(room, { type: "VOTE", id: "u1", card: "5", at: 1350 });
+      eq("cannot vote when story voting is disabled", room.votes.u1, undefined);
+
+      room = reduce(room, { type: "TOGGLE_VOTING", id: story.id, at: 1380 });
+      check("TOGGLE_VOTING enables voting", room.stories[0].votingEnabled === true);
+
+      room = reduce(room, { type: "VOTE", id: "u1", card: "5", at: 1400 });
+      room = reduce(room, { type: "VOTE", id: "u3", card: "8", at: 1400 });
+      eq("spectators cannot vote", room.votes.u3, undefined);
+
+      room = reduce(room, { type: "VOTE", id: "u1", card: "3", at: 1420 });
+      eq("clicking another card updates the vote", room.votes.u1, "3");
+
+      room = reduce(room, { type: "VOTE", id: "u1", card: "3", at: 1450 });
+      eq("voting sets or updates card choice", room.votes.u1, "3");
+
+      room = reduce(room, { type: "VOTE", id: "u1", card: "5", at: 1500 });
+      room = reduce(room, { type: "VOTE", id: "u2", card: "8", at: 1500 });
+      check("all present voters have voted", allVoted(room, 1500));
+      deepEq(
+        "castVotes maps ids to names",
+        castVotes(room).map((v) => `${v.name}:${v.card}`),
+        ["Ann:5", "Bo:8"]
+      );
+
+      const revealed = reduce(room, { type: "REVEAL", at: 1600 });
+      check("reveal flips the flag", revealed.revealed === true);
+      eq("reveal archives the round", revealed.stories[0].rounds.length, 1);
+      deepEq("archived round keeps names", revealed.stories[0].rounds[0].votes, { Ann: "5", Bo: "8" });
+      check("reveal twice does not duplicate", reduce(revealed, { type: "REVEAL", at: 1700 }) === revealed);
+      check("voting after reveal is ignored", reduce(revealed, { type: "VOTE", id: "u1", card: "3" }) === revealed);
+
+      const nextRound = reduce(revealed, { type: "RESET_ROUND", at: 1800 });
+      deepEq("new round clears the votes", nextRound.votes, {});
+      eq("round counter moves on", nextRound.round, 2);
+      eq("history survives the reset", nextRound.stories[0].rounds.length, 1);
+
+      const spectating = reduce(room, { type: "SET_ROLE", id: "u1", role: "spectator", at: 1900 });
+      eq("becoming a spectator drops your vote", spectating.votes.u1, undefined);
+
+      const hostLeft = reduce(room, { type: "LEAVE", id: "u1", at: 2000 });
+      eq("host passes to the next person", hostLeft.hostId, "u2");
+      eq("leaving removes the vote", hostLeft.votes.u1, undefined);
+
+      const kicked = reduce(room, { type: "KICK", id: "u2", by: "u1", at: 2000 });
+      eq("kick removes the participant", kicked.participants.u2, undefined);
+      check("kick by a non-host is refused", reduce(room, { type: "KICK", id: "u2", by: "u3", at: 2000 }) === room);
+      check(
+        "host transfer by a non-host is refused",
+        reduce(room, { type: "SET_HOST", id: "u2", by: "u3", at: 2000 }) === room
+      );
+      eq(
+        "host transfer by the host works",
+        reduce(room, { type: "SET_HOST", id: "u2", by: "u1", at: 2000 }).hostId,
+        "u2"
+      );
+
+      const orphaned = { ...room, hostId: null };
+      const joinedOrphan = reduce(orphaned, { type: "JOIN", id: "u4", name: "Dee", at: 2100 });
+      eq("joining never claims an empty host seat", joinedOrphan.hostId, null);
+
+      const NOW = 100000;
+      const withPresence = (u1Seen, u2Seen, votes) => ({
+        ...room,
+        participants: {
+          ...room.participants,
+          u1: { ...room.participants.u1, lastSeen: u1Seen },
+          u2: { ...room.participants.u2, lastSeen: u2Seen },
+        },
+        votes,
+      });
+      check("an away voter does not block the round", allVoted(withPresence(NOW, 0, { u1: "5" }), NOW));
+      check("a present voter without a card does block it", !allVoted(withPresence(NOW, NOW, { u1: "5" }), NOW));
+      check("nobody present means the round is not complete", !allVoted(withPresence(0, 0, {}), NOW));
+      check("heartbeat marks you present again", reduce(room, { type: "HEARTBEAT", id: "u2", at: 5555 }).participants.u2.lastSeen === 5555);
+
+      const estimated = reduce(revealed, {
+        type: "SET_ESTIMATE",
+        id: story.id,
+        value: "5",
+        jiraPoints: 5,
+        jiraSynced: true,
+        by: "Ann",
+        at: 2200,
+      });
+      eq("estimate stored", estimated.stories[0].finalEstimate, "5");
+      eq("synced story is archived out of the backlog", estimated.stories[0].status, "archived");
+      eq("sync attributed", estimated.stories[0].jiraSyncedBy, "Ann");
+      eq("archiving the active story clears the table", estimated.activeStoryId, null);
+      check("archiving resets the round", estimated.revealed === false && Object.keys(estimated.votes).length === 0);
+
+      const localOnly = reduce(revealed, { type: "SET_ESTIMATE", id: story.id, value: "5", at: 2200 });
+      eq("an estimate not sent to Jira stays in the backlog", localOnly.stories[0].status, "estimated");
+      eq("and stays on the table", localOnly.activeStoryId, story.id);
+
+      const secondStory = createStory({ title: "Story B", at: 2250 });
+      const twoStories = reduce(reduce(revealed, { type: "ADD_STORY", story: secondStory, at: 2250 }), {
+        type: "SET_ESTIMATE",
+        id: story.id,
+        value: "5",
+        jiraSynced: true,
+        at: 2260,
+      });
+      eq("archiving moves on to the next story", twoStories.activeStoryId, secondStory.id);
+
+      const restored = reduce(estimated, { type: "RESTORE_STORY", id: story.id, at: 2270 });
+      eq("a story can be put back in the backlog", restored.stories[0].status, "estimated");
+      check("restoring an open story changes nothing", reduce(restored, { type: "RESTORE_STORY", id: story.id }) === restored);
+
+      const switched = reduce(revealed, { type: "SET_ACTIVE_STORY", id: null, at: 2300 });
+      check("switching story clears the table", switched.revealed === false && Object.keys(switched.votes).length === 0);
+
+      const deckChanged = reduce(room, { type: "SET_DECK", deckId: "tshirt", at: 2400 });
+      deepEq("changing the deck clears stale votes", deckChanged.votes, {});
+
+      const timed = reduce(room, { type: "TIMER_START", at: 3000 });
+      eq("timer ends 60s later by default", timed.timer.endsAt, 3000 + 60000);
+      eq("remaining is derived from now", remainingSeconds(timed, 3000 + 15000), 45);
+      const paused = reduce(timed, { type: "TIMER_PAUSE", at: 3000 + 20000 });
+      eq("pausing keeps what is left", paused.timer.remaining, 40);
+
+      check("unknown actions are ignored", reduce(room, { type: "NOPE" }) === room);
+      eq("garbage state is rejected", normalizeRoom({ nonsense: true }), null);
+      check("a valid room normalises", normalizeRoom(JSON.parse(JSON.stringify(room)))?.id === "r1");
+
+      /* ---------------- Jira ---------------- */
+      group("jira");
+      eq("plain key", parseIssueRef("CUMA-123"), "CUMA-123");
+      eq("lower case key is upper-cased", parseIssueRef("cuma-7"), "CUMA-7");
+      eq("browse URL", parseIssueRef("https://acme.atlassian.net/browse/CUMA-42"), "CUMA-42");
+      eq(
+        "board URL with selectedIssue",
+        parseIssueRef("https://acme.atlassian.net/jira/software/projects/CUMA/boards/1?selectedIssue=CUMA-9"),
+        "CUMA-9"
+      );
+      eq("no key at all", parseIssueRef("just some text"), null);
+      eq("empty input", parseIssueRef(""), null);
+
+      deepEq("comma separated keys", parseIssueRefs("CUMA-130,CUMA-131"), ["CUMA-130", "CUMA-131"]);
+      deepEq("spaces and semicolons too", parseIssueRefs("CUMA-1 ; CUMA-2,  CUMA-3"), ["CUMA-1", "CUMA-2", "CUMA-3"]);
+      deepEq("duplicates dropped, order kept", parseIssueRefs("CUMA-2, CUMA-1, cuma-2"), ["CUMA-2", "CUMA-1"]);
+      deepEq(
+        "mixed keys and URLs",
+        parseIssueRefs("CUMA-5, https://acme.atlassian.net/browse/CUMA-6"),
+        ["CUMA-5", "CUMA-6"]
+      );
+      deepEq("nothing usable", parseIssueRefs("hello, world"), []);
+
+      eq("base URL gets a scheme", normalizeBaseUrl("acme.atlassian.net"), "https://acme.atlassian.net");
+      eq("base URL loses trailing slashes", normalizeBaseUrl("https://acme.atlassian.net//"), "https://acme.atlassian.net");
+
+      const cfg = { baseUrl: "https://acme.atlassian.net", proxy: "" };
+      eq("no proxy means a direct URL", buildUrl("/rest/api/3/myself", cfg), "https://acme.atlassian.net/rest/api/3/myself");
+      eq(
+        "placeholder proxies encode the target",
+        buildUrl("/x", { ...cfg, proxy: "https://p.example/?{url}" }),
+        "https://p.example/?https%3A%2F%2Facme.atlassian.net%2Fx"
+      );
+      eq(
+        "prefix proxies append the target",
+        buildUrl("/x", { ...cfg, proxy: "http://localhost:8080/" }),
+        "http://localhost:8080/https://acme.atlassian.net/x"
+      );
+
+      eq("a scheme-less proxy gets one", normalizeProxy("localhost:8080"), "http://localhost:8080/");
+      eq("a missing separator slash is added", normalizeProxy("http://localhost:8080"), "http://localhost:8080/");
+      eq("an existing slash is left alone", normalizeProxy("http://localhost:8080/"), "http://localhost:8080/");
+      eq("a query-style proxy keeps its shape", normalizeProxy("https://p.example/?"), "https://p.example/?");
+      eq("placeholders are untouched", normalizeProxy("https://p.example/?{url}"), "https://p.example/?{url}");
+      eq("empty stays empty", normalizeProxy("  "), "");
+      eq(
+        "a typed proxy still builds a usable URL",
+        buildUrl("/x", { ...cfg, proxy: "localhost:8080" }),
+        "http://localhost:8080/https://acme.atlassian.net/x"
+      );
+
+      eq("a sane proxy raises no complaint", proxyProblem("http://localhost:8080/", cfg.baseUrl), "");
+      check(
+        "pointing the proxy at Jira itself is caught",
+        proxyProblem("https://acme.atlassian.net/", cfg.baseUrl).includes("cannot be the Jira site"),
+        proxyProblem("https://acme.atlassian.net/", cfg.baseUrl)
+      );
+      check(
+        "pointing the proxy at this app's own server is caught",
+        proxyProblem(location.host, cfg.baseUrl).includes("this app's own web server"),
+        proxyProblem(location.host, cfg.baseUrl)
+      );
+
+      eq("401 explains the credentials", describeFailure({ status: 401 }, null).kind, "auth");
+      eq("403 explains permissions", describeFailure({ status: 403 }, null).kind, "permission");
+      eq("404 explains the key", describeFailure({ status: 404 }, null).kind, "not-found");
+      eq(
+        "400 surfaces the field error",
+        describeFailure({ status: 400 }, { errors: { customfield_10016: "Operation value must be a number" } }).message,
+        "customfield_10016: Operation value must be a number"
+      );
+
+      const adf = {
+        type: "doc",
+        version: 1,
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "Hello " }, { type: "text", text: "world", marks: [{ type: "strong" }] }] },
+          {
+            type: "bulletList",
+            content: [
+              { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "one" }] }] },
+              { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "two" }] }] },
+            ],
+          },
+        ],
+      };
+      const html = adfToHtml(adf);
+      check("ADF renders paragraphs", html.includes("<p>Hello <strong>world</strong></p>"), html);
+      check("ADF renders lists", html.includes("<ul>") && (html.match(/<li>/g) || []).length === 2, html);
+      check("ADF text keeps the words", adfToText(adf).includes("Hello world") && adfToText(adf).includes("• one"));
+
+      const nasty = adfToHtml({
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "<script>alert(1)<\/script>" }] }],
+      });
+      check("ADF escapes markup in text", !nasty.includes("<script" + ">"), nasty);
+
+      const badLink = adfToHtml({
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "click", marks: [{ type: "link", attrs: { href: "javascript:alert(1)" } }] }],
+          },
+        ],
+      });
+      check("javascript: links are dropped", !badLink.includes("javascript:"), badLink);
+
+      eq("plain-string descriptions still render", adfToHtml("line one\nline two").includes("<br>"), true);
+      eq("missing description renders nothing", adfToHtml(undefined), "");
+
+      const mapped = toStory(
+        { key: "CUMA-1", fields: { summary: "Sum", customfield_10016: 8, status: { name: "To Do" } } },
+        { pointsField: "customfield_10016", baseUrl: "https://acme.atlassian.net", mock: false }
+      );
+      eq("summary becomes the title", mapped.title, "Sum");
+      eq("configured field becomes the points", mapped.points, 8);
+      eq("issue URL is built", mapped.url, "https://acme.atlassian.net/browse/CUMA-1");
+
+      check("textToHtml escapes user input", !textToHtml("<b>hi</b>").includes("<b>"));
+
+      /* ---------------- export ---------------- */
+      group("export");
+      const csv = toCsv(estimated);
+      check("CSV has a header row", csv.startsWith("Jira key,Title,Status"), csv.slice(0, 60));
+      check("CSV includes the estimate", csv.includes("Story A"), csv);
+
+      const quoted = toCsv({
+        ...estimated,
+        stories: [{ ...estimated.stories[0], title: 'Comma, and "quotes"' }],
+      });
+      check("CSV escapes commas and quotes", quoted.includes('"Comma, and ""quotes"""'), quoted);
+
+      /* ---------------- createStore (the optimistic-publish regression) ---------------- */
+      group("createStore");
+
+      /** A fake transport that never fails, so we can watch exactly what got published. */
+      function fakeTransport(initial) {
+        let row = { state: initial, version: 1 };
+        const writes = [];
+        return {
+          writes,
+          async load() {
+            return { state: row.state, version: row.version };
+          },
+          async publish(state, expectedVersion) {
+            if (expectedVersion !== row.version) return { ok: false };
+            row = { state, version: row.version + 1 };
+            writes.push(row.version);
+            return { ok: true, state: row.state, version: row.version };
+          },
+        };
+      }
+
+      {
+        // The bug: dispatch() applies ADD_STORY to `state` before flush() ever
+        // runs. ADD_STORY's reducer returns its *input* unchanged when the key
+        // is already present — the right way to write that guard. flush() used
+        // to replay the pending action against the already-mutated `state`,
+        // see "unchanged", and never call publish. Nothing reached the server;
+        // reloading (or another participant) never saw the story.
+        const seed = createRoom({ id: "s1", host: { id: "h1", name: "Host" }, at: 1000 });
+        const transport = fakeTransport(seed);
+        const store = createStore(transport);
+        store.seed(seed, 1);
+
+        const story = createStory({ title: "From Jira", key: "CUMA-1", at: 1000 });
+        store.dispatch({ type: "ADD_STORY", story, at: 1000 });
+        await store.settled();
+
+        check("the story is visible locally right away", store.getState().stories.length === 1);
+        eq("and it actually reached the transport", transport.writes.length, 1);
+
+        const reloaded = await transport.load();
+        check("a fresh load sees the story too", reloaded.state.stories.some((s) => s.key === "CUMA-1"));
+      }
+
+      {
+        // Reveal has the same shape of guard ("already revealed? do nothing"),
+        // so it is exactly as exposed to this bug as ADD_STORY.
+        let seed = createRoom({ id: "s2", host: { id: "h1", name: "Host" }, at: 1000 });
+        const story = createStory({ title: "Vote me", at: 1000 });
+        seed = reduce(seed, { type: "ADD_STORY", story, at: 1000 });
+        seed = reduce(seed, { type: "TOGGLE_VOTING", id: story.id, at: 1000 });
+        seed = reduce(seed, { type: "VOTE", id: "h1", card: "5", at: 1000 });
+        const transport = fakeTransport(seed);
+        const store = createStore(transport);
+        store.seed(seed, 1);
+
+        store.dispatch({ type: "REVEAL", by: "h1", at: 1000 });
+        await store.settled();
+
+        eq("reveal reaches the transport", transport.writes.length, 1);
+        const reloaded = await transport.load();
+        check("a fresh load sees the reveal", reloaded.state.revealed === true);
+      }
+
+      {
+        // Two dispatches back to back, no await between them — the second
+        // must not see the first's optimistic state and decide there is
+        // nothing new for IT to publish either.
+        const seed = createRoom({ id: "s3", host: { id: "h1", name: "Host" }, at: 1000 });
+        const transport = fakeTransport(seed);
+        const store = createStore(transport);
+        store.seed(seed, 1);
+
+        const storyA = createStory({ title: "A", key: "CUMA-A", at: 1000 });
+        const storyB = createStory({ title: "B", key: "CUMA-B", at: 1000 });
+        store.dispatch({ type: "ADD_STORY", story: storyA, at: 1000 });
+        store.dispatch({ type: "ADD_STORY", story: storyB, at: 1000 });
+        await store.settled();
+
+        const reloaded = await transport.load();
+        deepEq(
+          "both back-to-back adds land on the server",
+          reloaded.state.stories.map((s) => s.key).sort(),
+          ["CUMA-A", "CUMA-B"]
+        );
+      }
+
+      /* ---------------- summary ---------------- */
+      const summary = document.getElementById("summary");
+      summary.textContent = failed ? `${failed} failed, ${passed} passed` : `All ${passed} tests passed`;
+      summary.style.color = failed ? "var(--danger)" : "var(--ok)";
+      window.testResults = { passed, failed };
+    </script>
+  </body>
+</html>
