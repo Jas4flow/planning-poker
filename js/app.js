@@ -518,6 +518,7 @@ const actions = {
     if (story) openManualStory({ store: session.store, story });
   },
   "set-active-story": (el) => session.store.dispatch({ type: "SET_ACTIVE_STORY", id: el.dataset.id }),
+  "select-story": (el) => session.store.dispatch({ type: "SELECT_STORY", id: me.id, storyId: el.dataset.id }),
   "move-story": (el) =>
     session.store.dispatch({ type: "MOVE_STORY", id: el.dataset.id, direction: el.dataset.direction }),
   "delete-story": async (el) => {
