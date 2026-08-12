@@ -91,6 +91,11 @@ function storyNow(story, ctx, room) {
                  ${story.votingEnabled ? "Voting open" : "Voting paused"}
                </span>`
         }
+        ${
+          !hasSelectedStory(room, ctx.meId)
+            ? `<button class="btn btn--sm btn--primary" type="button" data-act="select-story" data-id="${story.id}">Join here</button>`
+            : ""
+        }
         <button class="btn btn--sm btn--primary" type="button" data-act="update-points">Update story point</button>
         ${
           story.key
@@ -162,7 +167,9 @@ function estimatedTotal(room) {
 
 export function renderPeoplePanel(room, ctx) {
   const now = ctx.now || Date.now();
-  const people = Object.values(room.participants).sort((a, b) => a.joinedAt - b.joinedAt);
+  const people = Object.values(room.participants)
+    .filter((p) => !isAway(p, now))
+    .sort((a, b) => a.joinedAt - b.joinedAt);
 
   return `
     <div>

@@ -570,6 +570,13 @@ const actions = {
     const room = session.store.getState();
     const story = activeStory(room);
     if (!story) return;
+    if (!room.revealed) return;
+    const myVote = room.votes[me.id];
+    const isOwner = session?.meta?.owner_id === me.id;
+    if (!myVote && !isOwner) {
+      toast("You can only edit your own estimate.", "warn");
+      return;
+    }
     const cards = deckCards(room);
     const cardHtml = cards.map(card =>
       `<button type="button" class="estimate-card-btn" data-value="${escapeHtml(card)}" style="padding:8px 12px; margin:4px; border:2px solid #ccc; border-radius:4px; cursor:pointer; font-size:14px; min-width:50px;">${escapeHtml(card)}</button>`
