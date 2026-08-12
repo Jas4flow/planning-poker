@@ -387,7 +387,7 @@ function header(room, ctx) {
       ${prefs.sound ? "🔊" : "🔇"}
     </button>
     <button class="btn btn--icon" type="button" data-act="toggle-theme" aria-label="Switch theme" title="Switch theme">◐</button>
-    <button class="btn btn--sm" type="button" data-act="settings">Jira</button>
+    ${ctx.isOwner ? `<button class="btn btn--sm" type="button" data-act="settings">Jira</button>` : ""}
     <button class="btn btn--sm btn--ghost" type="button" data-act="leave">Leave</button>`;
 }
 
@@ -565,6 +565,29 @@ const actions = {
   "accept-estimate": (el) => {
     const story = activeStory(session.store.getState());
     if (story) session.store.dispatch({ type: "SET_ESTIMATE", id: story.id, value: el.dataset.value });
+  },
+  "edit-estimate": (el) => {
+    const room = session.store.getState();
+    const story = activeStory(room);
+    if (!story) return;
+    const cards = deckCards(room);
+    const cardHtml = cards.map(card =>
+      `<button type="button" class="estimate-card-btn" data-value="${escapeHtml(card)}" style="padding:8px 12px; margin:4px; border:2px solid #ccc; border-radius:4px; cursor:pointer; font-size:14px; min-width:50px;">${escapeHtml(card)}</button>`
+    ).join('');
+
+    const handle = openModal({
+      title: "Choose estimate",
+      body: `<div style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;">${cardHtml}</div>`,
+    });
+
+    handle.body.querySelectorAll('[data-value]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const value = btn.dataset.value;
+        session.store.dispatch({ type: "SET_ESTIMATE", id: story.id, value });
+        closeModal();
+        toast(`Estimate updated to ${value}`, "ok");
+      });
+    });
   },
   "pick-estimate": () => {
     const room = session.store.getState();
