@@ -46,7 +46,7 @@ import {
 const PREFS_KEY = "pp:prefs";
 const HEARTBEAT_MS = 20000;
 
-let prefs = { theme: "light", sound: true, sidebarWidth: 360, ...(readJson(PREFS_KEY) || {}) };
+let prefs = { theme: "light", sound: true, sidebarWidth: 360, descHeight: 300, ...(readJson(PREFS_KEY) || {}) };
 let auth = { user: null, profile: null };
 let me = { id: "", name: "" };
 let session = null; // { roomId, meta, transport, store, cleanup: [] }
@@ -152,6 +152,33 @@ document.addEventListener("keydown", (event) => {
 
 /* A window that shrank can leave a stored width with nowhere to go. */
 window.addEventListener("resize", () => setSidebarWidth(prefs.sidebarWidth));
+
+/* ---------- Description height ---------- */
+
+/**
+ * The description box has a resize handle, but dragging it writes an inline
+ * height onto an element `render()` replaces seconds later, so the drag would be
+ * thrown away with it. The height is read back off the element just before that
+ * happens and kept as a custom property, which the replacement inherits.
+ *
+ * Measured on the way out rather than watched with a ResizeObserver: an observer
+ * only reports while the page is actually being laid out, and this needs to hold
+ * for a background tab too.
+ */
+let descHeightWrite = null;
+
+function applyDescHeight() {
+  document.documentElement.style.setProperty("--story-desc-height", `${prefs.descHeight}px`);
+}
+
+function rememberDescHeight(height) {
+  // max-height may have clamped the drag; whatever was really used is the truth.
+  if (!height || Math.abs(height - prefs.descHeight) <= 1) return;
+  prefs.descHeight = Math.round(height);
+  applyDescHeight();
+  clearTimeout(descHeightWrite);
+  descHeightWrite = setTimeout(() => writeJson(PREFS_KEY, prefs), 300);
+}
 
 /* ---------- Auth ---------- */
 
@@ -439,10 +466,19 @@ function render() {
 
   const panel = $(`#panel-${sideTab}`);
   const scroll = panel ? panel.scrollTop : 0;
+  // The description scrolls inside itself and can be resized, so its position
+  // and height are separate from the panel's — both are thrown away with the
+  // element unless carried over. This runs every few seconds, and losing your
+  // place mid-read, or the height you just dragged, is maddening.
+  const descBefore = $(".story-desc");
+  const descScroll = descBefore?.scrollTop ?? 0;
+  if (descBefore) rememberDescHeight(descBefore.offsetHeight);
   if (sideTab === "story") setHtml($("#panel-story"), renderStoryPanel(room, ctx));
   if (sideTab === "people") setHtml($("#panel-people"), renderPeoplePanel(room, ctx));
   if (sideTab === "history") setHtml($("#panel-history"), renderHistoryPanel(room, ctx));
   if (panel) panel.scrollTop = scroll;
+  const descAfter = $(".story-desc");
+  if (descAfter) descAfter.scrollTop = descScroll;
 
   if (room.revealed && !wasRevealed) {
     if (prefs.sound) playReveal();
@@ -1033,6 +1069,7 @@ mountLanding({
 async function boot() {
   applyTheme();
   setSidebarWidth(prefs.sidebarWidth);
+  applyDescHeight();
   await refreshAuth();
   await route();
   window.addEventListener("hashchange", route);

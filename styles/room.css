@@ -735,7 +735,10 @@ body.is-resizing {
  * open it up for a big table or a long spec, without losing the list.
  */
 .story-desc {
-  height: 300px;
+  /* Driven by a custom property, not an inline style: the panel is re-rendered
+     every few seconds, and a height sitting on the element would be thrown away
+     with it. */
+  height: var(--story-desc-height, 300px);
   min-height: 120px;
   max-height: 70vh;
   overflow: auto;
