@@ -469,28 +469,72 @@
   gap: var(--sp-2);
 }
 
-.chat-bar__emoji {
+.chat-bar__field {
+  position: relative; /* anchors the smiley and its picker */
   display: flex;
-  gap: var(--sp-1);
+  align-items: center;
 }
 
-.chat-bar__emoji button {
-  width: 28px;
-  height: 28px;
+.chat-bar__input {
+  width: 240px;
+  padding-right: 34px; /* room for the smiley inside the field */
+}
+
+.chat-bar__smiley {
+  position: absolute;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
   border: 1px solid transparent;
-  border-radius: var(--radius);
+  border-radius: 50%;
   background: none;
   cursor: pointer;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-base);
+  line-height: 1;
 }
 
-.chat-bar__emoji button:hover {
+.chat-bar__smiley:hover,
+.chat-bar__smiley[aria-expanded="true"] {
   border-color: var(--line-strong);
   background: var(--surface-sunken);
 }
 
-.chat-bar__input {
-  width: 220px;
+/* Opens upward — the composer sits at the bottom of the window. */
+.chat-bar__picker {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + var(--sp-2));
+  z-index: 10;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  padding: var(--sp-2);
+  border: 1px solid var(--panel-line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+}
+
+.chat-bar__picker[hidden] {
+  display: none;
+}
+
+.chat-bar__picker button {
+  width: 30px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+  font-size: var(--fs-base);
+  line-height: 1;
+}
+
+.chat-bar__picker button:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-sunken);
 }
 
 /* One message at a time, top right of the stage, clear of the sidebar. */

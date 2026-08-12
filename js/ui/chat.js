@@ -13,7 +13,13 @@
 
 import { escapeHtml, initials } from "../util.js";
 
-export const CHAT_EMOJI = ["😀", "😂", "👍", "🎉", "🤔", "🙌", "😅", "🙏"];
+/** Enough to react with, few enough to scan in one look. */
+export const CHAT_EMOJI = [
+  "😀", "😄", "😅", "😂", "🙂", "😉", "😍", "🤩",
+  "🤔", "😐", "😴", "😮", "😢", "😤", "🤯", "🥳",
+  "👍", "👎", "👏", "🙌", "🙏", "💪", "🔥", "💯",
+  "🎉", "✅", "❌", "⚠️", "☕", "⏱", "🚀", "🐛",
+];
 
 const SHOW_MS = 10000;
 const MAX_LENGTH = 140;
@@ -81,15 +87,28 @@ function bubble({ name, text, system }) {
 export function renderChatBar() {
   return `
     <form class="chat-bar" id="chat-bar" autocomplete="off">
-      <div class="chat-bar__emoji" role="group" aria-label="Add an emoji">
-        ${CHAT_EMOJI.map(
-          (emoji) =>
-            `<button type="button" data-act="chat-emoji" data-emoji="${escapeHtml(emoji)}"
-                     title="Add ${escapeHtml(emoji)}" tabindex="-1">${emoji}</button>`
-        ).join("")}
+      <div class="chat-bar__field">
+        <input class="input chat-bar__input" id="chat-input" maxlength="${MAX_LENGTH}"
+               placeholder="Message the room…" aria-label="Message the room">
+        <button class="chat-bar__smiley" id="chat-emoji-toggle" type="button" data-act="chat-emoji-toggle"
+                aria-expanded="false" aria-controls="chat-emoji-picker" aria-label="Add an emoji"
+                title="Add an emoji">🙂</button>
+        <div class="chat-bar__picker" id="chat-emoji-picker" role="group" aria-label="Emoji" hidden>
+          ${CHAT_EMOJI.map(
+            (emoji) =>
+              `<button type="button" data-act="chat-emoji" data-emoji="${escapeHtml(emoji)}"
+                       title="Add ${escapeHtml(emoji)}">${emoji}</button>`
+          ).join("")}
+        </div>
       </div>
-      <input class="input chat-bar__input" id="chat-input" maxlength="${MAX_LENGTH}"
-             placeholder="Message the room…" aria-label="Message the room">
       <button class="btn btn--sm btn--primary" type="submit">Send</button>
     </form>`;
+}
+
+/** Close the picker. Safe to call when there is no composer on screen. */
+export function closeEmojiPicker() {
+  const picker = document.getElementById("chat-emoji-picker");
+  const toggle = document.getElementById("chat-emoji-toggle");
+  if (picker) picker.hidden = true;
+  if (toggle) toggle.setAttribute("aria-expanded", "false");
 }

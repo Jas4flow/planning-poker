@@ -31,7 +31,7 @@ import { downloadCsv, downloadJson } from "./export.js";
 import { renderStage } from "./ui/seats.js";
 import { renderDeck } from "./ui/deck.js";
 import { renderStoryPanel, renderPeoplePanel, renderHistoryPanel } from "./ui/side.js";
-import { createChatFeed, renderChatBar } from "./ui/chat.js";
+import { createChatFeed, renderChatBar, closeEmojiPicker } from "./ui/chat.js";
 import { mountLanding, renderLanding, renderNewPasswordCard } from "./ui/landing.js";
 import { openModal, closeModal, confirmDialog, promptDialog, isModalOpen } from "./ui/modals.js";
 import { openSettings } from "./ui/settings.js";
@@ -485,10 +485,17 @@ const actions = {
   react: (el) => session.store.dispatch({ type: "REACT", id: me.id, emoji: el.dataset.emoji }),
 
   /* chat */
+  "chat-emoji-toggle": (el) => {
+    const picker = $("#chat-emoji-picker");
+    if (!picker) return;
+    picker.hidden = !picker.hidden;
+    el.setAttribute("aria-expanded", String(!picker.hidden));
+  },
   "chat-emoji": (el) => {
     const input = $("#chat-input");
     if (!input) return;
     input.value = `${input.value}${el.dataset.emoji}`.slice(0, input.maxLength);
+    closeEmojiPicker();
     input.focus();
   },
   "toggle-role": () => {
@@ -760,8 +767,18 @@ document.addEventListener("submit", (event) => {
   const input = form.querySelector("#chat-input");
   const text = input.value.trim();
   input.value = "";
+  closeEmojiPicker();
   if (!text) return;
   say({ name: me.name, text });
+});
+
+/* The emoji picker closes on a click anywhere else, or on Escape. */
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".chat-bar__field")) closeEmojiPicker();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeEmojiPicker();
 });
 
 document.addEventListener("change", (event) => {
