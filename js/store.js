@@ -123,9 +123,16 @@ export function reduce(state, action) {
       return room;
     }
 
-    case "LEAVE":
-      if (!room.participants[action.id]) return state;
-      return removeParticipant(room, action.id);
+    case "LEAVE": {
+      const person = room.participants[action.id];
+      if (!person) return state;
+      room.participants = {
+        ...room.participants,
+        [action.id]: { ...person, lastSeen: 0, reaction: null },
+      };
+      if (room.hostId === action.id) room.hostId = nextHost(room.participants);
+      return room;
+    }
 
     case "KICK": {
       if (action.by && action.by !== room.hostId) return state;

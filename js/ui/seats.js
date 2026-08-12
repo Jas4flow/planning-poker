@@ -15,7 +15,11 @@ export function renderStage(room, ctx) {
   // and someone whose heartbeat has stopped is no longer in the round at all —
   // an empty seat for them just makes the count harder to read.
   const people = Object.values(room.participants)
-    .filter((p) => hasSelectedStory(room, p.id) && !isAway(p, now))
+    .filter(
+      (p) =>
+        hasSelectedStory(room, p.id) &&
+        (!isAway(p, now) || room.votes[p.id] !== undefined)
+    )
     .sort((a, b) => a.joinedAt - b.joinedAt);
   const half = Math.ceil(people.length / 2);
   const stats = room.revealed ? computeStats(castVotes(room), deckCards(room)) : null;
@@ -30,6 +34,7 @@ export function renderStage(room, ctx) {
 function seat(person, room, ctx, now, stats, side) {
   const vote = room.votes[person.id];
   const isSpectator = person.role === "spectator";
+  const away = isAway(person, now);
   const outlier = stats && vote && stats.outliers.includes(vote);
   const showReaction = person.reaction && now - person.reaction.at < REACTION_TTL_MS;
 
@@ -43,7 +48,7 @@ function seat(person, room, ctx, now, stats, side) {
   }
 
   return `
-    <div class="seat seat--${side}${isSpectator ? " seat--spectator" : ""}"
+    <div class="seat seat--${side}${isSpectator ? " seat--spectator" : ""}${away ? " seat--away" : ""}"
          title="${escapeHtml(person.name)}">
       ${showReaction ? `<span class="seat__reaction">${escapeHtml(person.reaction.emoji)}</span>` : ""}
       <div class="${cardClass}">${cardText}</div>
