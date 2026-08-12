@@ -179,7 +179,11 @@ function acceptRow(story, stats, ctx) {
              </button>`
           : ""
       }
-      <button class="btn" type="button" data-act="edit-estimate">Choose another value</button>
+      ${
+        ctx.isSpectator
+          ? ""
+          : `<button class="btn" type="button" data-act="edit-estimate">Change my card</button>`
+      }
       ${
         ctx.isOwner
           ? `<button class="btn btn--primary" type="button" data-act="update-points">

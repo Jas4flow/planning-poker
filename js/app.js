@@ -566,33 +566,40 @@ const actions = {
     const story = activeStory(session.store.getState());
     if (story) session.store.dispatch({ type: "SET_ESTIMATE", id: story.id, value: el.dataset.value });
   },
-  "edit-estimate": (el) => {
+  // Changes only your own card in the current round — never the story's final
+  // estimate. That is what "Accept …" and "Update story point" are for, and
+  // they stay with the owner.
+  "edit-estimate": () => {
     const room = session.store.getState();
     const story = activeStory(room);
     if (!story) return;
-    if (!room.revealed) return;
-    const myVote = room.votes[me.id];
-    const isOwner = session?.meta?.owner_id === me.id;
-    if (!myVote && !isOwner) {
-      toast("You can only edit your own estimate.", "warn");
-      return;
+    if (room.participants[me.id]?.role !== "voter") {
+      return toast("Spectators do not hold a card.", "warn");
     }
+    if (!story.votingEnabled) return toast("Voting is closed for this story.", "warn");
+    const myVote = room.votes[me.id];
     const cards = deckCards(room);
-    const cardHtml = cards.map(card =>
-      `<button type="button" class="estimate-card-btn" data-value="${escapeHtml(card)}" style="padding:8px 12px; margin:4px; border:2px solid #ccc; border-radius:4px; cursor:pointer; font-size:14px; min-width:50px;">${escapeHtml(card)}</button>`
-    ).join('');
+    const cardHtml = cards
+      .map(
+        (card) =>
+          `<button class="card-btn" type="button" data-value="${escapeHtml(card)}"
+                   aria-pressed="${myVote === card}">${escapeHtml(card)}</button>`
+      )
+      .join("");
 
     const handle = openModal({
-      title: "Choose estimate",
-      body: `<div style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;">${cardHtml}</div>`,
+      title: "Change your card",
+      body: `
+        <p class="hint">Only your own card changes — everyone else keeps theirs.</p>
+        <div class="deck__cards" style="justify-content:center">${cardHtml}</div>`,
     });
 
-    handle.body.querySelectorAll('[data-value]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const value = btn.dataset.value;
-        session.store.dispatch({ type: "SET_ESTIMATE", id: story.id, value });
+    handle.body.querySelectorAll("[data-value]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const card = button.dataset.value;
+        session.store.dispatch({ type: "VOTE", id: me.id, card });
         closeModal();
-        toast(`Estimate updated to ${value}`, "ok");
+        toast(`Your card is now ${card}.`, "ok");
       });
     });
   },

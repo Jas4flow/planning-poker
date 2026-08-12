@@ -214,6 +214,11 @@
       eq("first story goes on the table", room.activeStoryId, story.id);
       check("stories start with voting disabled", room.stories[0].votingEnabled === false);
 
+      // The host sits at the table by definition; everyone else has to join the
+      // story before their card counts.
+      room = reduce(room, { type: "SELECT_STORY", id: "u2", storyId: story.id, at: 1310 });
+      eq("joining the story seats you at the table", room.participants.u2.selectedStoryId, story.id);
+
       room = reduce(room, { type: "VOTE", id: "u1", card: "5", at: 1350 });
       eq("cannot vote when story voting is disabled", room.votes.u1, undefined);
 
@@ -244,7 +249,17 @@
       eq("reveal archives the round", revealed.stories[0].rounds.length, 1);
       deepEq("archived round keeps names", revealed.stories[0].rounds[0].votes, { Ann: "5", Bo: "8" });
       check("reveal twice does not duplicate", reduce(revealed, { type: "REVEAL", at: 1700 }) === revealed);
-      check("voting after reveal is ignored", reduce(revealed, { type: "VOTE", id: "u1", card: "3" }) === revealed);
+
+      // Cards stay editable after the reveal, until the round moves on. Only
+      // the voter's own card changes; the archived round keeps what was shown.
+      const changedAfterReveal = reduce(revealed, { type: "VOTE", id: "u1", card: "3", at: 1650 });
+      eq("your own card can change after the reveal", changedAfterReveal.votes.u1, "3");
+      eq("changing your card leaves everyone else alone", changedAfterReveal.votes.u2, "8");
+      eq("the story estimate is untouched", changedAfterReveal.stories[0].finalEstimate, null);
+      deepEq("the archived round keeps the revealed cards", changedAfterReveal.stories[0].rounds[0].votes, {
+        Ann: "5",
+        Bo: "8",
+      });
 
       const nextRound = reduce(revealed, { type: "RESET_ROUND", at: 1800 });
       deepEq("new round clears the votes", nextRound.votes, {});
