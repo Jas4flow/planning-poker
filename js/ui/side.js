@@ -177,9 +177,11 @@ function estimatedTotal(room) {
 
 export function renderPeoplePanel(room, ctx) {
   const now = ctx.now || Date.now();
-  const people = Object.values(room.participants)
-    .filter((p) => !isAway(p, now))
-    .sort((a, b) => a.joinedAt - b.joinedAt);
+  // A backgrounded tab throttles its heartbeat and looks "away" within
+  // seconds — that is normal, and personRow already renders an "away" badge
+  // for it. Filtering them out here instead made someone who just switched
+  // tabs look like they had left the room entirely.
+  const people = Object.values(room.participants).sort((a, b) => a.joinedAt - b.joinedAt);
 
   return `
     <div>
@@ -206,9 +208,13 @@ export function renderPeoplePanel(room, ctx) {
 
 function personRow(person, room, ctx, now) {
   const away = isAway(person, now);
+  // A backgrounded/minimized tab, not yet stale enough to count as away —
+  // set instantly by the visibilitychange listener in app.js, not by a
+  // heartbeat timeout.
+  const offline = person.online === false && !away;
   const voted = room.votes[person.id] !== undefined;
   return `
-    <li class="person">
+    <li class="person${away ? " person--away" : offline ? " person--offline" : ""}">
       <span class="seat__avatar">${escapeHtml(initials(person.name))}</span>
       <span class="person__name">
         ${escapeHtml(person.name)}${person.id === ctx.meId ? " (you)" : ""}
@@ -219,7 +225,9 @@ function personRow(person, room, ctx, now) {
           ? '<span class="chip">watching</span>'
           : voted
           ? `<span class="chip chip--ok">${room.revealed ? escapeHtml(room.votes[person.id]) : "voted"}</span>`
-          : `<span class="chip${away ? "" : " chip--warn"}">${away ? "away" : "thinking"}</span>`
+          : `<span class="chip${away || offline ? "" : " chip--warn"}">${
+              away ? "away" : offline ? "offline" : "thinking"
+            }</span>`
       }
       <span class="person__actions">
         ${

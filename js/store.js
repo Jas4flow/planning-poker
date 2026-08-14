@@ -10,7 +10,13 @@ import { newId } from "./util.js";
 import { DECKS } from "./decks.js";
 
 export const SCHEMA_VERSION = 1;
-export const AWAY_AFTER_MS = 25000;
+// A safety net for a tab that is simply gone (closed, crashed, network dead)
+// — not for a merely backgrounded one. Whether a tab is visible right now is
+// tracked explicitly instead (see the `online` field and SET_ONLINE below),
+// since background tabs get their timers throttled by the browser and can
+// miss a heartbeat or two without actually being gone. This just needs to
+// comfortably outlast that throttling.
+export const AWAY_AFTER_MS = 90000;
 
 export function createRoom({ id, name, deckId = "fibonacci", customCards = [], host, at = Date.now() }) {
   const room = {
@@ -47,6 +53,7 @@ function participant({ id, name, role = "voter" }, at) {
     role: role === "spectator" ? "spectator" : "voter",
     joinedAt: at,
     lastSeen: at,
+    online: true,
     reaction: null,
     // Which story this person has actively joined. Being connected to the
     // room is not the same as being at the table for a given story — this
@@ -103,7 +110,7 @@ export function reduce(state, action) {
       room.participants = {
         ...room.participants,
         [id]: existing
-          ? { ...existing, name: name ?? existing.name, role: role ?? existing.role, lastSeen: at }
+          ? { ...existing, name: name ?? existing.name, role: role ?? existing.role, online: true, lastSeen: at }
           : participant({ id, name, role }, at),
       };
       // Never let joining make someone host — a room that somehow has no host
@@ -120,6 +127,23 @@ export function reduce(state, action) {
       const person = room.participants[action.id];
       if (!person) return state;
       room.participants = { ...room.participants, [action.id]: { ...person, lastSeen: at } };
+      return room;
+    }
+
+    // Fired the instant a tab's visibility flips (see the visibilitychange
+    // listener in app.js) — deliberately not timer-driven, so it is exact and
+    // immediate rather than waiting for a heartbeat that a backgrounded tab's
+    // throttled timers might delay.
+    case "SET_ONLINE": {
+      const person = room.participants[action.id];
+      if (!person || person.online === action.online) return state;
+      room.participants = {
+        ...room.participants,
+        // Coming back online is also good evidence of life, so it doubles as
+        // a heartbeat; going offline leaves lastSeen alone — AWAY_AFTER_MS is
+        // the fallback for a tab that never comes back at all.
+        [action.id]: { ...person, online: action.online, lastSeen: action.online ? at : person.lastSeen },
+      };
       return room;
     }
 

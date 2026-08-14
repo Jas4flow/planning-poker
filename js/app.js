@@ -702,6 +702,19 @@ ticker.add((now) => {
   }
 });
 
+/*
+ * A backgrounded or minimized tab is not the same as someone who left — it
+ * should read as "offline" to everyone else, not vanish or count as away,
+ * until either the tab actually stops sending heartbeats (see
+ * AWAY_AFTER_MS) or they come back. visibilitychange fires immediately on
+ * both edges, unlike the ticker above, which a hidden tab's throttled timers
+ * can delay.
+ */
+document.addEventListener("visibilitychange", () => {
+  if (!session?.store.getState()?.participants[me.id]) return;
+  session.store.dispatch({ type: "SET_ONLINE", id: me.id, online: document.visibilityState === "visible" });
+});
+
 /* ---------- Actions ---------- */
 
 const GLOBAL_ACTIONS = ["toggle-theme", "settings", "go-home", "sign-out", "reload"];

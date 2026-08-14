@@ -185,6 +185,13 @@
   border: 1px dashed var(--line-strong);
 }
 
+/* Tab backgrounded or minimized, but still open — a lighter fade than
+   .seat--away, which is reserved for a heartbeat that has actually gone
+   stale (see AWAY_AFTER_MS). */
+.seat--offline {
+  opacity: 0.7;
+}
+
 .seat--away {
   opacity: 0.45;
 }
@@ -1022,6 +1029,17 @@ body.is-resizing {
 
 .person:hover {
   background: var(--surface-muted);
+}
+
+/* Tab backgrounded or minimized, but still open. */
+.person--offline {
+  opacity: 0.75;
+}
+
+/* No heartbeat in a while (AWAY_AFTER_MS) — likely a closed tab, but this
+   still fades rather than removing them outright, in case they come back. */
+.person--away {
+  opacity: 0.6;
 }
 
 .person__name {
