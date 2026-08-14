@@ -282,7 +282,7 @@ function hostControls(room) {
 
 /* ---------- History ---------- */
 
-export function renderHistoryPanel(room) {
+export function renderHistoryPanel(room, ctx) {
   const cards = deckCards(room);
   const done = archivedStories(room);
   const stories = room.stories.filter((story) => story.rounds.length);
@@ -317,9 +317,16 @@ export function renderHistoryPanel(room) {
                </div>
                <div class="story-item__actions">
                  <span class="points">${escapeHtml(story.finalEstimate ?? "–")}</span>
+                 ${
+                   ctx?.isOwner
+                     ? `<button type="button" data-act="update-points-history" data-id="${story.id}"
+                         aria-label="Update ${escapeHtml(story.title)}'s story point in Jira"
+                         title="Update story point in Jira">✎</button>`
+                     : ""
+                 }
                  <button type="button" data-act="restore-story" data-id="${story.id}"
-                         aria-label="Put ${escapeHtml(story.title)} back in the backlog"
-                         title="Put back in the backlog">↩</button>
+                         aria-label="Put ${escapeHtml(story.title)} back on the story board"
+                         title="Put back on the story board">↩</button>
                </div>
              </li>`
              )

@@ -864,6 +864,8 @@ body.is-resizing {
   padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--panel-line);
   border-radius: var(--radius);
+  background: var(--panel-bg);
+  transition: box-shadow 0.15s var(--ease);
 }
 
 .story-item__drag {
@@ -882,8 +884,17 @@ body.is-resizing {
   color: var(--text);
 }
 
+/*
+ * Lifted off the list: a bit bigger, shadowed, and above its neighbours, so
+ * it visibly reads as "picked up" rather than merely disabled. The transform
+ * itself is driven per-frame from JS while it follows the pointer, so it is
+ * deliberately left out of this rule's transition — only the drop (below)
+ * animates it back to rest.
+ */
 .story-item--dragging {
-  opacity: 0.5;
+  position: relative;
+  z-index: 5;
+  box-shadow: var(--shadow-lift);
   cursor: grabbing;
 }
 
@@ -891,8 +902,14 @@ body.is-resizing {
   cursor: grabbing;
 }
 
+/* Added for the moment the pointer is released, so the card glides back to
+   flat instead of snapping. */
+.story-item--dropping {
+  transition: transform 0.16s var(--ease), box-shadow 0.16s var(--ease);
+}
+
 .story-list--reordering .story-item:not(.story-item--dragging) {
-  transition: transform 0.12s ease;
+  transition: transform 0.15s var(--ease);
 }
 
 .story-item--active {

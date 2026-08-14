@@ -216,6 +216,11 @@ window.addEventListener("pointercancel", () => {
  * directly; only on drop is the result turned into a REORDER_STORY action.
  */
 let storyDrag = null;
+// render() keeps hands off #panel-story while `storyDrag` is set (the drag
+// is live), but the drop's own snap-back animation runs a little after that
+// flag clears — this stretches the quiet window so a mid-air re-render
+// doesn't cut the animation off.
+let storyDragSettleAt = 0;
 
 document.addEventListener("pointerdown", (event) => {
   const handle = event.target.closest("[data-drag-handle]");
@@ -229,7 +234,7 @@ document.addEventListener("pointerdown", (event) => {
   } catch {
     /* the window listeners below carry the drag on their own */
   }
-  storyDrag = { list, item };
+  storyDrag = { list, item, startY: event.clientY };
   item.classList.add("story-item--dragging");
   list.classList.add("story-list--reordering");
   window.addEventListener("pointermove", onStoryDragMove);
@@ -239,12 +244,35 @@ document.addEventListener("pointerdown", (event) => {
 
 function onStoryDragMove(event) {
   if (!storyDrag) return;
-  const { list, item } = storyDrag;
-  const target = Array.from(list.children)
-    .filter((el) => el !== item)
-    .find((sibling) => event.clientY < sibling.getBoundingClientRect().top + sibling.getBoundingClientRect().height / 2);
+  const { list, item, startY } = storyDrag;
+  // Follow the pointer 1:1 — no transition here, or it would lag behind.
+  item.style.transform = `translateY(${event.clientY - startY}px) scale(1.02)`;
+
+  const target =
+    Array.from(list.children)
+      .filter((el) => el !== item)
+      .find(
+        (sibling) => event.clientY < sibling.getBoundingClientRect().top + sibling.getBoundingClientRect().height / 2
+      ) || null;
+  if (target === item.nextElementSibling || (target === null && item === list.lastElementChild)) return;
+
+  // FLIP the rows this displaces: record where they are now, move the node,
+  // then glide each shifted row from its old spot to its new one.
+  const before = new Map(Array.from(list.children).map((el) => [el, el.getBoundingClientRect()]));
   if (target) list.insertBefore(item, target);
   else list.appendChild(item);
+  for (const el of list.children) {
+    if (el === item) continue;
+    const prev = before.get(el);
+    const dy = prev.top - el.getBoundingClientRect().top;
+    if (!dy) continue;
+    el.style.transition = "none";
+    el.style.transform = `translateY(${dy}px)`;
+    requestAnimationFrame(() => {
+      el.style.transition = "";
+      el.style.transform = "";
+    });
+  }
 }
 
 function onStoryDragEnd() {
@@ -253,10 +281,19 @@ function onStoryDragEnd() {
   window.removeEventListener("pointermove", onStoryDragMove);
   window.removeEventListener("pointerup", onStoryDragEnd);
   window.removeEventListener("pointercancel", onStoryDragEnd);
-  item.classList.remove("story-item--dragging");
-  list.classList.remove("story-list--reordering");
   const order = Array.from(list.children).map((el) => el.dataset.id).filter(Boolean);
   storyDrag = null;
+  storyDragSettleAt = Date.now() + 220;
+
+  item.classList.add("story-item--dropping");
+  item.style.transform = "";
+  const cleanup = () => {
+    item.classList.remove("story-item--dragging", "story-item--dropping");
+    list.classList.remove("story-list--reordering");
+  };
+  item.addEventListener("transitionend", cleanup, { once: true });
+  setTimeout(cleanup, 220); // safety net if the transition never fires
+
   if (order.length > 1) session.store.dispatch({ type: "REORDER_STORY", order });
 }
 
@@ -553,8 +590,15 @@ function render() {
   const descBefore = $(".story-desc");
   const descScroll = descBefore?.scrollTop ?? 0;
   if (descBefore) rememberDescHeight(descBefore.offsetHeight);
-  if (sideTab === "story" && !descResizing && !storyDrag) setHtml($("#panel-story"), renderStoryPanel(room, ctx));
-  if (sideTab === "people") setHtml($("#panel-people"), renderPeoplePanel(room, ctx));
+  if (sideTab === "story" && !descResizing && !storyDrag && Date.now() >= storyDragSettleAt)
+    setHtml($("#panel-story"), renderStoryPanel(room, ctx));
+  // Rebuilding the panel out from under an open <select> (or a field the user
+  // is mid-edit on) closes the picker and can leave the wrong option looking
+  // "chosen" — so leave it alone until the control is no longer focused.
+  const peoplePanel = $("#panel-people");
+  const peopleBusy = peoplePanel?.contains(document.activeElement) &&
+    ["SELECT", "INPUT"].includes(document.activeElement.tagName);
+  if (sideTab === "people" && !peopleBusy) setHtml(peoplePanel, renderPeoplePanel(room, ctx));
   if (sideTab === "history") setHtml($("#panel-history"), renderHistoryPanel(room, ctx));
   if (panel) panel.scrollTop = scroll;
   const descAfter = $(".story-desc");
@@ -764,7 +808,14 @@ const actions = {
   },
   "restore-story": (el) => {
     session.store.dispatch({ type: "RESTORE_STORY", id: el.dataset.id });
-    toast("Back in the backlog.", "ok");
+    session.store.dispatch({ type: "SET_ACTIVE_STORY", id: el.dataset.id });
+    toast("Back on the story board.", "ok");
+  },
+  "update-points-history": (el) => {
+    const room = session.store.getState();
+    const story = room.stories.find((s) => s.id === el.dataset.id);
+    if (!story) return;
+    openUpdatePoints({ store: session.store, room, story, me, suggestion: null });
   },
   "next-story": () => {
     const room = session.store.getState();
