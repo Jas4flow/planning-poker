@@ -697,8 +697,17 @@ ticker.add((now) => {
   if (ticks % (HEARTBEAT_MS / 500) === 0 && room.participants[me.id]) {
     session.store.dispatch({ type: "HEARTBEAT", id: me.id });
     void db.touchMembership(session.roomId, {});
-  } else {
-    render(); // refresh "away" markers and reaction bubbles within half a second
+    // Refreshing "away" markers and reaction bubbles a couple of seconds late
+    // is not noticeable, but rebuilding the header/stage/deck twice a second
+    // — every tick — is: it is what makes a click landing mid-rebuild look
+    // unresponsive (setHtml skips the write when nothing changed, but the
+    // timer countdown genuinely does change every tick, so table-area was
+    // being torn down and rebuilt constantly whenever the round timer ran,
+    // right under whatever button someone happened to be clicking). The
+    // countdown digits themselves are updated directly above, independent of
+    // this, so slowing this down costs nothing visible.
+  } else if (ticks % 4 === 0) {
+    render();
   }
 });
 
