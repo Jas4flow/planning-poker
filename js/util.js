@@ -1,5 +1,7 @@
 /** Small shared helpers: ids, DOM, escaping, storage, toasts. */
 
+import { MORPHDOM_JS } from "./config.js";
+
 const ID_ALPHABET = "abcdefghijkmnopqrstuvwxyz23456789";
 
 /** Short, URL-friendly, collision-unlikely id. */
@@ -114,21 +116,48 @@ export function $$(selector, root = document) {
   return Array.from(root.querySelectorAll(selector));
 }
 
-/** Replace an element's children with parsed HTML. */
 /*
- * render() calls this unconditionally every tick (every 500ms) as well as on
- * every state change, for panels that mostly do not change tick to tick. A
- * bare `innerHTML =` tears down and rebuilds the whole subtree regardless,
- * which can land mid-click: mousedown targets a button, the tick swaps it
- * out for a freshly built node before mouseup, and the click event — still
- * bound to the now-detached original — can never bubble to the delegated
- * listener on `document`. The button just does not respond, and it takes a
- * second click (this time uninterrupted) to register. Skipping the write
- * when nothing actually changed removes almost all of those windows.
+ * render() calls this on every tick as well as on every state change, for
+ * panels that mostly do not change tick to tick — and, whenever the round
+ * timer is running, with content that genuinely does differ each time (the
+ * countdown). A bare `innerHTML =` tears down and rebuilds the whole
+ * subtree regardless of how small the actual change is, which can land
+ * mid-click: mousedown targets a button, a render swaps it out for a
+ * freshly built node before mouseup, and the click event — still bound to
+ * the now-detached original — can never bubble to the delegated listener on
+ * `document`. The button just does not respond, and it takes a second click
+ * (this time landing cleanly) to register.
+ *
+ * morphdom patches the existing tree in place — matching by `data-id`/`id`
+ * where present, position otherwise — so an unrelated change elsewhere in
+ * the same panel never touches the node underneath an in-progress click,
+ * and focus/scroll position on anything that did not change survive too.
  */
+let morphdom = null;
+import(/* @vite-ignore */ MORPHDOM_JS)
+  .then((mod) => {
+    morphdom = mod.default;
+  })
+  .catch(() => {
+    /* CDN unreachable — setHtml falls back to a plain innerHTML replace below */
+  });
+
+function morphKey(node) {
+  return node.id || node.getAttribute?.("data-id") || undefined;
+}
+
+/** Replace an element's children with parsed HTML, patching in place once morphdom has loaded. */
 export function setHtml(el, html) {
-  if (!el || el.innerHTML === html) return;
-  el.innerHTML = html;
+  if (!el) return;
+  if (!morphdom) {
+    // Not loaded yet (or failed to load) — still better than an unconditional
+    // write, since most calls land with nothing actually different.
+    if (el.innerHTML !== html) el.innerHTML = html;
+    return;
+  }
+  const next = document.createElement(el.tagName);
+  next.innerHTML = html;
+  morphdom(el, next, { childrenOnly: true, getNodeKey: morphKey });
 }
 
 export function clamp(value, min, max) {

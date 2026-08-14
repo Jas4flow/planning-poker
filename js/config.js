@@ -14,6 +14,10 @@ export const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_Shx8IBolqwh-5QkDt2wIRg_S
 /** Pinned so a CDN release cannot change the app under you. */
 export const SUPABASE_JS = "https://esm.sh/@supabase/supabase-js@2.58.0";
 
+/** DOM diffing for setHtml (util.js) — patches in place instead of tearing
+ *  down and rebuilding a whole subtree on every render. */
+export const MORPHDOM_JS = "https://esm.sh/morphdom@2.7.4";
+
 /** Local overrides, for pointing a copy of the app at another project. */
 const OVERRIDE_KEY = "pp:supabase";
 

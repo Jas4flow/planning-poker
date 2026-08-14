@@ -54,7 +54,7 @@ let sideTab = "story";
 let wasRevealed = false;
 let ticks = 0;
 
-const ticker = createTicker(500);
+const ticker = createTicker(1000);
 
 /* ---------- Preferences ---------- */
 
@@ -596,14 +596,11 @@ function render() {
   setHtml($("#table-area"), renderStage(room, ctx));
   setHtml($("#deck"), renderDeck(room, ctx));
 
-  const panel = $(`#panel-${sideTab}`);
-  const scroll = panel ? panel.scrollTop : 0;
-  // The description scrolls inside itself and can be resized, so its position
-  // and height are separate from the panel's — both are thrown away with the
-  // element unless carried over. This runs every few seconds, and losing your
-  // place mid-read, or the height you just dragged, is maddening.
+  // setHtml (util.js) morphs the panel in place rather than replacing it, so
+  // the browser keeps scroll position on its own now — capturing it here and
+  // forcing it back afterwards, as this used to do, fought with any scrolling
+  // that happened in between and made the page creep back up mid-scroll.
   const descBefore = $(".story-desc");
-  const descScroll = descBefore?.scrollTop ?? 0;
   if (descBefore) rememberDescHeight(descBefore.offsetHeight);
   if (sideTab === "story" && !descResizing && !storyDrag && Date.now() >= storyDragSettleAt)
     setHtml($("#panel-story"), renderStoryPanel(room, ctx));
@@ -615,9 +612,6 @@ function render() {
     ["SELECT", "INPUT"].includes(document.activeElement.tagName);
   if (sideTab === "people" && !peopleBusy) setHtml(peoplePanel, renderPeoplePanel(room, ctx));
   if (sideTab === "history") setHtml($("#panel-history"), renderHistoryPanel(room, ctx));
-  if (panel) panel.scrollTop = scroll;
-  const descAfter = $(".story-desc");
-  if (descAfter) descAfter.scrollTop = descScroll;
 
   if (room.revealed && !wasRevealed) {
     if (prefs.sound) playReveal();
@@ -694,19 +688,14 @@ ticker.add((now) => {
     }
   }
 
-  if (ticks % (HEARTBEAT_MS / 500) === 0 && room.participants[me.id]) {
+  if (ticks % (HEARTBEAT_MS / 1000) === 0 && room.participants[me.id]) {
     session.store.dispatch({ type: "HEARTBEAT", id: me.id });
     void db.touchMembership(session.roomId, {});
-    // Refreshing "away" markers and reaction bubbles a couple of seconds late
-    // is not noticeable, but rebuilding the header/stage/deck twice a second
-    // — every tick — is: it is what makes a click landing mid-rebuild look
-    // unresponsive (setHtml skips the write when nothing changed, but the
-    // timer countdown genuinely does change every tick, so table-area was
-    // being torn down and rebuilt constantly whenever the round timer ran,
-    // right under whatever button someone happened to be clicking). The
-    // countdown digits themselves are updated directly above, independent of
-    // this, so slowing this down costs nothing visible.
-  } else if (ticks % 4 === 0) {
+  } else {
+    // setHtml (util.js) patches the DOM in place via morphdom rather than
+    // tearing subtrees down, so calling render() every tick no longer risks
+    // pulling a button out from under an in-progress click the way an
+    // unconditional innerHTML replace did.
     render();
   }
 });
