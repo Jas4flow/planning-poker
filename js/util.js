@@ -115,8 +115,20 @@ export function $$(selector, root = document) {
 }
 
 /** Replace an element's children with parsed HTML. */
+/*
+ * render() calls this unconditionally every tick (every 500ms) as well as on
+ * every state change, for panels that mostly do not change tick to tick. A
+ * bare `innerHTML =` tears down and rebuilds the whole subtree regardless,
+ * which can land mid-click: mousedown targets a button, the tick swaps it
+ * out for a freshly built node before mouseup, and the click event — still
+ * bound to the now-detached original — can never bubble to the delegated
+ * listener on `document`. The button just does not respond, and it takes a
+ * second click (this time uninterrupted) to register. Skipping the write
+ * when nothing actually changed removes almost all of those windows.
+ */
 export function setHtml(el, html) {
-  if (el) el.innerHTML = html;
+  if (!el || el.innerHTML === html) return;
+  el.innerHTML = html;
 }
 
 export function clamp(value, min, max) {
