@@ -41,6 +41,7 @@ import {
   openJqlImport,
   openPickEstimate,
   openUpdatePoints,
+  openChangeStatus,
 } from "./ui/story-modals.js";
 
 const PREFS_KEY = "pp:prefs";
@@ -842,6 +843,12 @@ const actions = {
     const story = room.stories.find((s) => s.id === el.dataset.id);
     if (!story) return;
     openUpdatePoints({ store: session.store, room, story, me, suggestion: null });
+  },
+  "change-status": (el) => {
+    const room = session.store.getState();
+    const story = el.dataset.id ? room.stories.find((s) => s.id === el.dataset.id) : activeStory(room);
+    if (!story?.key) return;
+    openChangeStatus({ store: session.store, story });
   },
   "next-story": () => {
     const room = session.store.getState();

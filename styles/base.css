@@ -436,6 +436,23 @@ textarea {
   color: #7fd0ea;
 }
 
+/* A chip that is also a button (change-status) — reset the button defaults
+   a <button> element carries so it still reads as a chip, not a button. */
+.chip--btn {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+  transition: filter 0.15s var(--ease);
+}
+
+.chip--btn:hover {
+  filter: brightness(0.95);
+}
+
+[data-theme="dark"] .chip--btn:hover {
+  filter: brightness(1.15);
+}
+
 .note {
   padding: var(--sp-3);
   border-left: 3px solid var(--line-strong);

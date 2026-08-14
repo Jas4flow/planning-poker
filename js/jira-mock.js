@@ -121,6 +121,38 @@ export async function updateStoryPoints(key, value, config) {
   return { key, points: value };
 }
 
+/** A small linear workflow, just enough to exercise "only some moves are legal from here". */
+const WORKFLOW = {
+  "In Refinement": [{ id: "21", name: "Ready for sprint", toStatus: "To Do" }],
+  "To Do": [{ id: "11", name: "Start progress", toStatus: "In Progress" }],
+  "In Progress": [
+    { id: "31", name: "Stop progress", toStatus: "To Do" },
+    { id: "32", name: "Done", toStatus: "Done" },
+  ],
+  Done: [{ id: "41", name: "Reopen", toStatus: "To Do" }],
+};
+
+export async function getTransitions(key) {
+  await wait();
+  const found = db()[key];
+  if (!found) throw new JiraError(`Mock Jira has no issue ${key}.`, { status: 404, kind: "not-found" });
+  return WORKFLOW[found.fields.status.name] || [];
+}
+
+export async function applyTransition(key, transitionId) {
+  await wait();
+  const issues = db();
+  const found = issues[key];
+  if (!found) throw new JiraError(`Mock Jira has no issue ${key}.`, { status: 404, kind: "not-found" });
+  const chosen = (WORKFLOW[found.fields.status.name] || []).find((t) => t.id === transitionId);
+  if (!chosen) {
+    throw new JiraError(`That transition is no longer available for ${key}.`, { status: 400, kind: "invalid" });
+  }
+  found.fields.status = { name: chosen.toStatus };
+  persist(issues);
+  return chosen.toStatus;
+}
+
 export async function searchIssues(jql, config, maxResults = 25) {
   await wait();
   const issues = Object.values(db());

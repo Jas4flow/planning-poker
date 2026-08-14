@@ -505,6 +505,79 @@ export function openUpdatePoints({ store, room, story, me, suggestion }) {
   return handle;
 }
 
+/* ---------- Change status (Jira workflow) ---------- */
+
+/**
+ * Which move is legal from here is entirely Jira's call — a workflow only
+ * allows certain next statuses from wherever the issue sits right now — so
+ * this always asks Jira fresh rather than offering a fixed list, and the
+ * story's own jiraStatus only updates once Jira has actually accepted the
+ * move (never optimistically).
+ */
+export function openChangeStatus({ store, story }) {
+  const handle = openModal({
+    title: "Change status",
+    body: `<p class="hint">Asking Jira what moves are open from here…</p>`,
+  });
+
+  const load = async () => {
+    try {
+      const transitions = await jira.getTransitions(story.key);
+      if (!transitions.length) {
+        handle.body.innerHTML = `
+          ${statusNow(story)}
+          <p class="hint">Jira has no further moves from here for ${escapeHtml(story.key)}.</p>`;
+        return;
+      }
+      handle.body.innerHTML = `
+        ${statusNow(story)}
+        <div class="stack stack--tight">
+          ${transitions
+            .map(
+              (t) => `
+            <button class="btn btn--block" type="button" data-transition-id="${escapeHtml(t.id)}"
+                    style="justify-content:space-between">
+              <span>${escapeHtml(t.name)}</span>
+              ${t.toStatus ? `<span class="chip chip--teal">${escapeHtml(t.toStatus)}</span>` : ""}
+            </button>`
+            )
+            .join("")}
+        </div>`;
+
+      handle.body.querySelectorAll("[data-transition-id]").forEach((button) => {
+        button.addEventListener("click", () => applyTransition(button, transitions));
+      });
+    } catch (error) {
+      handle.body.innerHTML = statusNow(story);
+      handle.message(errorText(error), "danger");
+    }
+  };
+
+  const applyTransition = async (button, transitions) => {
+    handle.clearMessage();
+    handle.body.querySelectorAll("[data-transition-id]").forEach((b) => (b.disabled = true));
+    try {
+      const chosen = transitions.find((t) => t.id === button.dataset.transitionId);
+      const landedOn = await jira.applyTransition(story.key, button.dataset.transitionId);
+      store.dispatch({ type: "UPDATE_STORY", id: story.id, patch: { jiraStatus: landedOn || chosen?.toStatus || "" } });
+      toast(`${story.key} moved to ${landedOn || chosen?.toStatus}.`, "ok");
+      closeModal();
+    } catch (error) {
+      handle.message(errorText(error), "danger");
+      handle.body.querySelectorAll("[data-transition-id]").forEach((b) => (b.disabled = false));
+    }
+  };
+
+  void load();
+  return handle;
+}
+
+function statusNow(story) {
+  return `<p class="hint">Current: ${
+    story.jiraStatus ? `<span class="chip chip--teal">${escapeHtml(story.jiraStatus)}</span>` : "unknown"
+  }</p>`;
+}
+
 function hasValue(value) {
   return value !== null && value !== undefined && value !== "";
 }

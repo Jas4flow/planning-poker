@@ -62,7 +62,14 @@ function storyNow(story, ctx, room) {
             : ""
         }
         <div class="spacer"></div>
-        ${story.jiraStatus ? `<span class="chip chip--teal">${escapeHtml(story.jiraStatus)}</span>` : ""}
+        ${
+          story.jiraStatus
+            ? ctx.isOwner && story.key
+              ? `<button class="chip chip--teal chip--btn" type="button" data-act="change-status"
+                   title="Change status in Jira">${escapeHtml(story.jiraStatus)} ▾</button>`
+              : `<span class="chip chip--teal">${escapeHtml(story.jiraStatus)}</span>`
+            : ""
+        }
         ${
           story.finalEstimate !== null && story.finalEstimate !== undefined
             ? `<span class="points">${escapeHtml(story.finalEstimate)}</span>`

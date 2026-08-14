@@ -470,6 +470,35 @@ export async function getIssue(keyOrRef, config = loadConfig()) {
   return toStory(issue, config);
 }
 
+/**
+ * The transitions actually available from this issue's CURRENT workflow
+ * state — not a fixed list. Jira workflows restrict which status changes are
+ * legal from wherever the issue sits right now, so this has to be asked for
+ * fresh each time rather than assumed from the status name alone.
+ */
+export async function getTransitions(key, config = loadConfig()) {
+  if (config.mock) return mock.getTransitions(key, config);
+
+  const data = await request(`/rest/api/3/issue/${encodeURIComponent(key)}/transitions`, { config });
+  return (data?.transitions || []).map((t) => ({ id: t.id, name: t.name, toStatus: t.to?.name || "" }));
+}
+
+/** Move an issue along its workflow. `transitionId` must be one `getTransitions` just returned. */
+export async function applyTransition(key, transitionId, config = loadConfig()) {
+  if (config.mock) return mock.applyTransition(key, transitionId, config);
+
+  await request(`/rest/api/3/issue/${encodeURIComponent(key)}/transitions`, {
+    method: "POST",
+    body: { transition: { id: transitionId } },
+    config,
+  });
+  // Read the issue back so the UI shows the status Jira actually landed on,
+  // not just the transition's nominal target — a workflow post-function can
+  // still redirect it elsewhere.
+  const fresh = await request(`/rest/api/3/issue/${encodeURIComponent(key)}?fields=status`, { config });
+  return fresh?.fields?.status?.name || "";
+}
+
 export async function updateStoryPoints(key, value, config = loadConfig()) {
   if (config.mock) return mock.updateStoryPoints(key, value, config);
 
