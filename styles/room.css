@@ -760,6 +760,83 @@ body.is-resizing {
   overflow-wrap: anywhere;
 }
 
+/* ---------- Status picker ---------- */
+
+.status-picker {
+  position: relative; /* anchors the dropdown */
+}
+
+.status-picker__menu {
+  position: absolute;
+  top: calc(100% + var(--sp-2));
+  right: 0;
+  z-index: 10;
+  width: max-content;
+  min-width: 220px;
+  max-width: 300px;
+  padding: var(--sp-2);
+  border: 1px solid var(--panel-line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  text-align: left;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.status-picker__current {
+  padding: var(--sp-1) var(--sp-2) var(--sp-2);
+  margin-bottom: var(--sp-1);
+  border-bottom: 1px solid var(--panel-line);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.status-picker__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.status-picker__option:hover:not(:disabled) {
+  background: var(--surface-sunken);
+}
+
+.status-picker__option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.status-picker__empty,
+.status-picker__loading {
+  padding: var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  color: var(--text-faint);
+}
+
+.status-picker__error {
+  padding: var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--danger);
+}
+
 /*
  * Jira descriptions run long. The box keeps its own scrollbar so the backlog
  * below stays reachable, but it is resizable: drag the bottom-right corner to

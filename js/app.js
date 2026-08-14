@@ -34,7 +34,7 @@ import { renderStoryPanel, renderPeoplePanel, renderHistoryPanel } from "./ui/si
 import { createChatFeed, renderChatBar, closeEmojiPicker } from "./ui/chat.js";
 import { mountLanding, renderLanding, renderNewPasswordCard } from "./ui/landing.js";
 import { openModal, closeModal, confirmDialog, promptDialog, isModalOpen } from "./ui/modals.js";
-import { openSettings } from "./ui/settings.js";
+import { openSettings, errorText } from "./ui/settings.js";
 import {
   openAddStoryFromJira,
   openManualStory,
@@ -546,6 +546,23 @@ async function showJoin(token) {
 
 let pendingRole = null;
 
+/*
+ * The inline status dropdown on the story panel (as opposed to the modal
+ * version reachable from History). Kept as plain state, read into ctx and
+ * rendered by storyNow() like any other piece of room state, rather than a
+ * DOM node built once and mutated afterwards — that would need its own
+ * re-render guard the way the People panel's <select> does; this way there
+ * is nothing for a periodic render() to tear out from under it.
+ */
+let statusPicker = null; // { storyId, loading, applying, transitions, error }
+
+document.addEventListener("click", (event) => {
+  if (statusPicker && !event.target.closest(".status-picker")) {
+    statusPicker = null;
+    render();
+  }
+});
+
 /* ---------- Overlay ---------- */
 
 function showOverlay(html) {
@@ -584,6 +601,7 @@ function context(room) {
     isOwner: session?.meta?.owner_id === me.id,
     now: Date.now(),
     inviteUrl: session?.meta?.invite_token ? db.inviteUrl(session.meta.invite_token) : "",
+    statusPicker,
   };
 }
 
@@ -849,6 +867,55 @@ const actions = {
     const story = el.dataset.id ? room.stories.find((s) => s.id === el.dataset.id) : activeStory(room);
     if (!story?.key) return;
     openChangeStatus({ store: session.store, story });
+  },
+  "toggle-status-picker": () => {
+    const story = activeStory(session.store.getState());
+    if (!story?.key) return;
+    if (statusPicker?.storyId === story.id) {
+      statusPicker = null;
+      render();
+      return;
+    }
+    statusPicker = { storyId: story.id, loading: true, applying: false, transitions: null, error: null };
+    render();
+    jira
+      .getTransitions(story.key)
+      .then((transitions) => {
+        if (statusPicker?.storyId !== story.id) return; // closed, or moved on, while this was in flight
+        statusPicker = { ...statusPicker, loading: false, transitions };
+        render();
+      })
+      .catch((error) => {
+        if (statusPicker?.storyId !== story.id) return;
+        statusPicker = { ...statusPicker, loading: false, transitions: [], error: errorText(error) };
+        render();
+      });
+  },
+  "apply-status-transition": (el) => {
+    if (!statusPicker || statusPicker.applying) return;
+    const room = session.store.getState();
+    const story = room.stories.find((s) => s.id === statusPicker.storyId);
+    const chosen = statusPicker.transitions?.find((t) => t.id === el.dataset.transitionId);
+    if (!story?.key || !chosen) return;
+    statusPicker = { ...statusPicker, applying: true, error: null };
+    render();
+    jira
+      .applyTransition(story.key, chosen.id)
+      .then((landedOn) => {
+        session.store.dispatch({
+          type: "UPDATE_STORY",
+          id: story.id,
+          patch: { jiraStatus: landedOn || chosen.toStatus || "" },
+        });
+        toast(`${story.key} moved to ${landedOn || chosen.toStatus}.`, "ok");
+        statusPicker = null;
+        render();
+      })
+      .catch((error) => {
+        if (statusPicker?.storyId !== story.id) return;
+        statusPicker = { ...statusPicker, applying: false, error: errorText(error) };
+        render();
+      });
   },
   "next-story": () => {
     const room = session.store.getState();

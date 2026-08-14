@@ -65,8 +65,13 @@ function storyNow(story, ctx, room) {
         ${
           story.jiraStatus
             ? ctx.isOwner && story.key
-              ? `<button class="chip chip--teal chip--btn" type="button" data-act="change-status"
-                   title="Change status in Jira">${escapeHtml(story.jiraStatus)} ▾</button>`
+              ? `<div class="status-picker">
+                   <button class="chip chip--teal chip--btn" type="button" data-act="toggle-status-picker"
+                           aria-expanded="${ctx.statusPicker?.storyId === story.id}" title="Change status in Jira">
+                     ${escapeHtml(story.jiraStatus)} ▾
+                   </button>
+                   ${ctx.statusPicker?.storyId === story.id ? statusPickerMenu(story, ctx.statusPicker) : ""}
+                 </div>`
               : `<span class="chip chip--teal">${escapeHtml(story.jiraStatus)}</span>`
             : ""
         }
@@ -122,6 +127,40 @@ function storyNow(story, ctx, room) {
       </div>
       ${ctx.isHost ? "" : `<p class="hint">Anyone can write the agreed estimate back to Jira with their own credentials.</p>`}
     </article>`;
+}
+
+/**
+ * Which moves are legal from here is Jira's call, not a fixed list this app
+ * assumes — a workflow only allows certain next statuses from wherever the
+ * issue sits right now, so `picker.transitions` always came from asking Jira
+ * fresh, and is null until that answer is back.
+ */
+function statusPickerMenu(story, picker) {
+  if (picker.error) {
+    return `<div class="status-picker__menu" role="menu"><p class="status-picker__error">${escapeHtml(picker.error)}</p></div>`;
+  }
+  if (picker.loading) {
+    return `<div class="status-picker__menu" role="menu"><p class="status-picker__loading">Asking Jira what moves are open from here…</p></div>`;
+  }
+  if (!picker.transitions?.length) {
+    return `<div class="status-picker__menu" role="menu"><p class="status-picker__empty">No further moves from here.</p></div>`;
+  }
+  return `
+    <div class="status-picker__menu" role="menu">
+      <div class="status-picker__current">Current: ${escapeHtml(story.jiraStatus || "—")}</div>
+      ${picker.transitions
+        .map(
+          (t) => `
+        <button class="status-picker__option" type="button" role="menuitem"
+                data-act="apply-status-transition" data-transition-id="${escapeHtml(t.id)}" ${
+          picker.applying ? "disabled" : ""
+        }>
+          <span>${escapeHtml(t.name)}</span>
+          ${t.toStatus ? `<span class="chip chip--teal">${escapeHtml(t.toStatus)}</span>` : ""}
+        </button>`
+        )
+        .join("")}
+    </div>`;
 }
 
 function storyRow(story, room, ctx) {
