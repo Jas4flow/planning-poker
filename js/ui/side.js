@@ -393,6 +393,12 @@ export function renderHistoryPanel(room, ctx) {
                 : ""
             }
             ${
+              ctx?.isOwner && story.jiraStatus
+                ? `<button class="chip chip--teal chip--btn" type="button" data-act="change-status" data-id="${story.id}"
+                     title="Change status in Jira">${escapeHtml(story.jiraStatus)} ▾</button>`
+                : ""
+            }
+            ${
               ctx?.isOwner
                 ? `<button class="btn btn--icon" type="button" data-act="update-points-history" data-id="${story.id}"
                      aria-label="Update ${escapeHtml(story.title)}'s story point in Jira"
