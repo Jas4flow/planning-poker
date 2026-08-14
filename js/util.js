@@ -128,10 +128,11 @@ export function $$(selector, root = document) {
  * `document`. The button just does not respond, and it takes a second click
  * (this time landing cleanly) to register.
  *
- * morphdom patches the existing tree in place — matching by `data-id`/`id`
- * where present, position otherwise — so an unrelated change elsewhere in
- * the same panel never touches the node underneath an in-progress click,
- * and focus/scroll position on anything that did not change survive too.
+ * morphdom patches the existing tree in place — matching list rows (`<li>`)
+ * by id/data-id, everything else by position — so an unrelated change
+ * elsewhere in the same panel never touches the node underneath an
+ * in-progress click, and focus/scroll position on anything that did not
+ * change survive too.
  */
 let morphdom = null;
 import(/* @vite-ignore */ MORPHDOM_JS)
@@ -142,7 +143,20 @@ import(/* @vite-ignore */ MORPHDOM_JS)
     /* CDN unreachable — setHtml falls back to a plain innerHTML replace below */
   });
 
+/*
+ * `data-id` is not a unique identity across a whole panel — it is reused on
+ * purpose so an action button (data-act="toggle-voting" data-id="storyId")
+ * and that story's own <li> both carry the same story id, for two unrelated
+ * reasons. Keying every element by it, as an earlier version of this did,
+ * hands morphdom two different elements under the identical key and its
+ * keyed-matching algorithm cannot reconcile that — it was duplicating nodes
+ * (a "Start voting" button piling up on every click) rather than patching
+ * them. Only actual repeated list rows need a stable key for morphdom to
+ * reorder/reuse correctly; a lone button does not, and matches fine by
+ * position instead.
+ */
 function morphKey(node) {
+  if (node.tagName !== "LI") return undefined;
   return node.id || node.getAttribute?.("data-id") || undefined;
 }
 
