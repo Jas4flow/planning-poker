@@ -194,19 +194,22 @@ export async function signInOrSignUp(email, password, displayName) {
   return { user: fresh.data.user, created: true };
 }
 
-/** A throwaway account for someone who only wants to vote in one session. */
+/**
+ * A throwaway account for someone who only wants to vote in one session.
+ *
+ * Always starts a brand new anonymous identity rather than reusing whatever
+ * session happens to already be there. Reusing "if it's already a guest" was
+ * tried first, but a tab opened *from a link* (middle-click, ctrl-click,
+ * "open in new tab" on the invite link) inherits a copy of the opener tab's
+ * sessionStorage per the HTML spec — so a second tab could silently carry
+ * over the first tab's guest identity even though sessionStorage is
+ * otherwise per-tab. Signing out first closes that loophole: every explicit
+ * "Join the session" click is a fresh person, no matter how the tab got
+ * there.
+ */
 export async function signInAsGuest(displayName) {
   const supabase = await client();
   const existing = await currentUser();
-  // Reuse an existing anonymous session — they are already a guest. The name
-  // typed for *this* join still applies, though: without it, a second tab's
-  // join form would silently keep whatever name the first session used.
-  if (existing && isGuest(existing)) {
-    if (displayName) await setDisplayName(displayName);
-    return existing;
-  }
-  // If there is a real (non-anonymous) session, sign out first so the guest
-  // gets their own identity instead of inheriting the host's account.
   if (existing) await supabase.auth.signOut();
   const { data, error } = await supabase.auth.signInAnonymously({
     options: { data: { display_name: displayName || "Guest", is_anonymous: true } },

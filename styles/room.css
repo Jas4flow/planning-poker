@@ -1126,6 +1126,25 @@ body.is-resizing {
   color: var(--text-faint);
 }
 
+/* A points indicator that is also a button (the story panel's own
+   "Update story point" shortcut) — reset the <button> defaults so it still
+   reads as the same pill, not a button. */
+.points--btn {
+  border: 0;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.15s var(--ease);
+}
+
+.points--btn:hover {
+  filter: brightness(0.9);
+}
+
+[data-theme="dark"] .points--btn:hover {
+  filter: brightness(1.2);
+}
+
 /* Participants */
 
 .people {

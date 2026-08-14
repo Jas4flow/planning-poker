@@ -78,7 +78,11 @@ function storyNow(story, ctx, room) {
         }
         ${
           story.finalEstimate !== null && story.finalEstimate !== undefined
-            ? `<span class="points">${escapeHtml(story.finalEstimate)}</span>`
+            ? ctx.isOwner
+              ? `<button class="points points--btn" type="button" data-act="update-points" title="Update story point">${escapeHtml(story.finalEstimate)}</button>`
+              : `<span class="points">${escapeHtml(story.finalEstimate)}</span>`
+            : ctx.isOwner
+            ? `<button class="points points--pending points--btn" type="button" data-act="update-points" title="Set the story point">–</button>`
             : `<span class="points points--pending">–</span>`
         }
       </div>
