@@ -318,11 +318,16 @@ export function renderPeoplePanel(room, ctx) {
 }
 
 function personRow(person, room, ctx, now) {
-  const away = isAway(person, now);
+  // LEAVE (store.js) hard-resets lastSeen to the literal 0 — a deliberate,
+  // known departure, not the vague staleness a heartbeat that just stopped
+  // arriving would produce. Reads as "offline", same as a backgrounded tab,
+  // rather than the more tentative "away".
+  const left = person.lastSeen === 0;
+  const away = !left && isAway(person, now);
   // A backgrounded/minimized tab, not yet stale enough to count as away —
   // set instantly by the visibilitychange listener in app.js, not by a
   // heartbeat timeout.
-  const offline = person.online === false && !away;
+  const offline = left || (person.online === false && !away);
   const voted = room.votes[person.id] !== undefined;
   return `
     <li class="person${away ? " person--away" : offline ? " person--offline" : ""}">

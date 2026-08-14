@@ -34,8 +34,13 @@ export function renderStage(room, ctx) {
 function seat(person, room, ctx, now, stats, side) {
   const vote = room.votes[person.id];
   const isSpectator = person.role === "spectator";
-  const away = isAway(person, now);
-  const offline = person.online === false && !away;
+  // LEAVE (store.js) hard-resets lastSeen to the literal 0 — a deliberate
+  // departure, not the vague staleness a heartbeat that just stopped arriving
+  // would produce, so it reads as "offline" like a backgrounded tab rather
+  // than "away".
+  const left = person.lastSeen === 0;
+  const away = !left && isAway(person, now);
+  const offline = left || (person.online === false && !away);
   const outlier = stats && vote && stats.outliers.includes(vote);
   const showReaction = person.reaction && now - person.reaction.at < REACTION_TTL_MS;
 
