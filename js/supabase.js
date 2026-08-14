@@ -193,8 +193,13 @@ export async function signInOrSignUp(email, password, displayName) {
 export async function signInAsGuest(displayName) {
   const supabase = await client();
   const existing = await currentUser();
-  // Reuse an existing anonymous session — they are already a guest.
-  if (existing && isGuest(existing)) return existing;
+  // Reuse an existing anonymous session — they are already a guest. The name
+  // typed for *this* join still applies, though: without it, a second tab's
+  // join form would silently keep whatever name the first session used.
+  if (existing && isGuest(existing)) {
+    if (displayName) await setDisplayName(displayName);
+    return existing;
+  }
   // If there is a real (non-anonymous) session, sign out first so the guest
   // gets their own identity instead of inheriting the host's account.
   if (existing) await supabase.auth.signOut();
