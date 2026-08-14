@@ -9,6 +9,12 @@
 html,
 body {
   height: 100%;
+  /* Belt-and-braces: the room/landing layouts are built to never need this,
+     but some piece of dynamic content (a Jira field, a long name) always
+     finds the one case that was missed. This guarantees the page itself
+     never grows wider than the viewport, whatever that turns out to be —
+     it clips rather than silently shifting the whole layout sideways. */
+  overflow-x: hidden;
 }
 
 body {

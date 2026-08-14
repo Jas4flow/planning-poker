@@ -54,6 +54,12 @@
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto auto;
   min-height: 0;
+  /* A grid item's default minimum width is its content's natural width, not
+     its assigned track — so a story with a long unbroken token (a raw URL, an
+     inline code string) could force this wider than its column and push the
+     whole layout past the viewport. Zeroing it hands overflow control back to
+     the scrollable/wrapping rules already inside (table-area, story-desc). */
+  min-width: 0;
   background: radial-gradient(circle at 50% 30%, var(--surface) 0%, var(--page-bg) 70%);
 }
 
@@ -624,6 +630,10 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* Same reasoning as .stage above — without this, a long word or link inside
+     whichever story is on the table can force this grid item wider than the
+     column .room__body actually gave it, and the whole page shifts. */
+  min-width: 0;
   border-left: 1px solid var(--panel-line);
   background: var(--panel-bg);
 }
@@ -747,6 +757,7 @@ body.is-resizing {
 
 .story-now__title {
   font-size: var(--fs-md);
+  overflow-wrap: anywhere;
 }
 
 /*
