@@ -3,7 +3,7 @@
 import { openModal, closeModal, field } from "./modals.js";
 import { openSettings, errorText } from "./settings.js";
 import { richTextField, mountRichText } from "./rte.js";
-import { escapeHtml, toast, round } from "../util.js";
+import { escapeHtml, toast, round, readJson, writeJson } from "../util.js";
 import { createStory } from "../store.js";
 import { deckCards, cardToNumber } from "../decks.js";
 import { validatePointValue } from "../stats.js";
@@ -85,6 +85,8 @@ export function openAddStoryFromJira({ store, activate = true }) {
           });
           story.jiraPoints = issue.points;
           story.jiraStatus = issue.status || null;
+          story.jiraAssignee = issue.assignee || null;
+          story.jiraAssigneeId = issue.assigneeId || null;
           if (issue.points !== null && issue.points !== undefined) {
             story.finalEstimate = String(issue.points);
           }
@@ -257,6 +259,204 @@ export function openManualStory({ store, story = null }) {
   return handle;
 }
 
+/* ---------- Import from backlog ---------- */
+
+const LAST_PROJECT_KEY = "pp:jira-last-project";
+
+/**
+ * Project → its open issues, picked by checkbox. Two lists in one modal
+ * rather than a wizard: switching projects just reloads the issue list
+ * below, so there is nothing to step back through.
+ */
+export function openImportFromBacklog({ store, activate = false }) {
+  const config = jira.loadConfig();
+  let projects = [];
+  let selectedKey = readJson(LAST_PROJECT_KEY, null);
+  let issues = null; // null = not loaded yet for the current selection
+  let checked = new Set();
+
+  const handle = openModal({
+    title: "Import from backlog",
+    wide: true,
+    body: `
+      <div class="field">
+        <label for="backlog-search">Project</label>
+        <input class="input" id="backlog-search" placeholder="Search projects…" autocomplete="off">
+      </div>
+      <div class="stack stack--tight" id="backlog-projects" style="max-height:160px; overflow-y:auto">
+        <p class="hint">Loading projects…</p>
+      </div>
+      <div id="backlog-issues" style="margin-top: var(--sp-4)">
+        <p class="hint">Pick a project to see its open issues.</p>
+      </div>
+      ${
+        jira.configProblem(config)
+          ? `<p class="note note--warn">${escapeHtml(jira.configProblem(config))} Open Settings first.</p>`
+          : ""
+      }`,
+    footer: `
+      <button class="btn" type="button" data-settings>Settings</button>
+      <div class="spacer"></div>
+      <button class="btn" type="button" data-modal-close>Cancel</button>
+      <button class="btn btn--primary" type="button" data-add disabled>Add selected</button>`,
+  });
+
+  handle.footer.querySelector("[data-settings]").addEventListener("click", () =>
+    openSettings({ onSaved: () => openImportFromBacklog({ store, activate }) })
+  );
+
+  const projectsHost = handle.body.querySelector("#backlog-projects");
+  const issuesHost = handle.body.querySelector("#backlog-issues");
+  const addButton = handle.footer.querySelector("[data-add]");
+  const searchInput = handle.body.querySelector("#backlog-search");
+
+  function renderProjects(filterText = "") {
+    const text = filterText.trim().toLowerCase();
+    const visible = text
+      ? projects.filter((p) => p.key.toLowerCase().includes(text) || p.name.toLowerCase().includes(text))
+      : projects;
+    if (!visible.length) {
+      projectsHost.innerHTML = `<p class="hint">No projects match “${escapeHtml(filterText)}”.</p>`;
+      return;
+    }
+    projectsHost.innerHTML = visible
+      .map(
+        (p) => `
+      <button class="btn btn--block${p.key === selectedKey ? " btn--primary" : ""}" type="button"
+              data-project-key="${escapeHtml(p.key)}" style="justify-content:flex-start">
+        <strong>${escapeHtml(p.key)}</strong>&nbsp;<span class="muted">${escapeHtml(p.name)}</span>
+      </button>`
+      )
+      .join("");
+    projectsHost.querySelectorAll("[data-project-key]").forEach((button) => {
+      button.addEventListener("click", () => selectProject(button.dataset.projectKey));
+    });
+  }
+
+  async function selectProject(key) {
+    if (key === selectedKey && issues) return;
+    selectedKey = key;
+    writeJson(LAST_PROJECT_KEY, key);
+    renderProjects(searchInput.value);
+    issues = null;
+    checked = new Set();
+    updateAddButton();
+    issuesHost.innerHTML = `<p class="hint">Loading ${escapeHtml(key)}’s backlog…</p>`;
+    try {
+      issues = await jira.projectBacklog(key, config);
+      renderIssues();
+    } catch (error) {
+      issuesHost.innerHTML = `<p class="note note--danger">${escapeHtml(errorText(error))}</p>`;
+    }
+  }
+
+  function renderIssues() {
+    const existing = new Set((store.getState()?.stories || []).map((s) => s.key).filter(Boolean));
+    if (!issues.length) {
+      issuesHost.innerHTML = `<p class="hint">No open issues in ${escapeHtml(selectedKey)}.</p>`;
+      return;
+    }
+    issuesHost.innerHTML = `
+      <div class="row row--tight" style="margin-bottom:var(--sp-2)">
+        <label class="check"><input type="checkbox" id="backlog-select-all"> Select all</label>
+        <div class="spacer"></div>
+        <span class="hint">${issues.length} open issue${issues.length === 1 ? "" : "s"}</span>
+      </div>
+      <div class="stack stack--tight" style="max-height:280px; overflow-y:auto">
+        ${issues
+          .map((issue) => {
+            const already = existing.has(issue.key);
+            return `
+          <label class="check" style="${already ? "opacity:0.5" : ""}">
+            <input type="checkbox" data-issue-key="${escapeHtml(issue.key)}" ${already ? "disabled" : ""}>
+            <span><strong>${escapeHtml(issue.key)}</strong> ${escapeHtml(issue.title)}</span>
+            ${already ? `<span class="chip">already in backlog</span>` : ""}
+            ${issue.status ? `<span class="chip chip--teal">${escapeHtml(issue.status)}</span>` : ""}
+          </label>`;
+          })
+          .join("")}
+      </div>`;
+
+    issuesHost.querySelectorAll("[data-issue-key]").forEach((input) => {
+      input.addEventListener("change", () => {
+        if (input.checked) checked.add(input.dataset.issueKey);
+        else checked.delete(input.dataset.issueKey);
+        updateAddButton();
+      });
+    });
+    const selectAll = issuesHost.querySelector("#backlog-select-all");
+    selectAll.addEventListener("change", () => {
+      issuesHost.querySelectorAll("[data-issue-key]:not(:disabled)").forEach((input) => {
+        input.checked = selectAll.checked;
+        if (selectAll.checked) checked.add(input.dataset.issueKey);
+        else checked.delete(input.dataset.issueKey);
+      });
+      updateAddButton();
+    });
+  }
+
+  function updateAddButton() {
+    addButton.disabled = checked.size === 0;
+    addButton.textContent = checked.size ? `Add selected (${checked.size})` : "Add selected";
+  }
+
+  searchInput.addEventListener("input", () => renderProjects(searchInput.value));
+
+  addButton.addEventListener("click", () => {
+    // Re-checked against the live room, not the snapshot the list was built
+    // from — someone else may have added one of these in the meantime.
+    const existing = new Set((store.getState()?.stories || []).map((s) => s.key).filter(Boolean));
+    let added = 0;
+    let skipped = 0;
+    let firstAdded = null;
+    for (const key of checked) {
+      if (existing.has(key)) {
+        skipped += 1;
+        continue;
+      }
+      const issue = issues.find((i) => i.key === key);
+      if (!issue) continue;
+      const story = createStory({ title: issue.title, description: issue.description, key: issue.key, url: issue.url });
+      story.jiraPoints = issue.points;
+      story.jiraStatus = issue.status || null;
+      story.jiraAssignee = issue.assignee || null;
+      story.jiraAssigneeId = issue.assigneeId || null;
+      store.dispatch({ type: "ADD_STORY", story });
+      existing.add(key);
+      if (!firstAdded) firstAdded = story;
+      added += 1;
+    }
+    if (activate && firstAdded) {
+      const room = store.getState();
+      if (room && room.activeStoryId !== firstAdded.id) {
+        store.dispatch({ type: "SET_ACTIVE_STORY", id: firstAdded.id });
+      }
+    }
+    if (!added) {
+      toast(`Nothing new to add — ${skipped} selected issue${skipped === 1 ? "" : "s"} already in the backlog.`, "warn");
+      return;
+    }
+    toast(
+      `Added ${added} issue${added === 1 ? "" : "s"}${skipped ? `, skipped ${skipped} already in the backlog` : ""}.`,
+      "ok"
+    );
+    closeModal();
+  });
+
+  jira
+    .listProjects(config)
+    .then((list) => {
+      projects = list;
+      renderProjects();
+      if (selectedKey && projects.some((p) => p.key === selectedKey)) selectProject(selectedKey);
+    })
+    .catch((error) => {
+      projectsHost.innerHTML = `<p class="note note--danger">${escapeHtml(errorText(error))}</p>`;
+    });
+
+  return handle;
+}
+
 /* ---------- Import by JQL ---------- */
 
 export function openJqlImport({ store }) {
@@ -309,6 +509,8 @@ export function openJqlImport({ store }) {
         });
         story.jiraPoints = issue.points;
         story.jiraStatus = issue.status || null;
+        story.jiraAssignee = issue.assignee || null;
+        story.jiraAssigneeId = issue.assigneeId || null;
         store.dispatch({ type: "ADD_STORY", story });
         existing.add(issue.key);
         added += 1;

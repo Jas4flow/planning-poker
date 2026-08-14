@@ -837,6 +837,37 @@ body.is-resizing {
   color: var(--danger);
 }
 
+/* ---------- Assignee ---------- */
+
+.story-now__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+
+.assignee-picker {
+  position: relative; /* anchors the dropdown */
+}
+
+.assignee-picker__trigger {
+  gap: var(--sp-1);
+}
+
+.assignee-picker__menu {
+  left: 0;
+  right: auto;
+}
+
+.assignee-picker__results {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+#assignee-search {
+  margin-bottom: var(--sp-1);
+}
+
 /*
  * Jira descriptions run long. The box keeps its own scrollbar so the backlog
  * below stays reachable, but it is resizable: drag the bottom-right corner to

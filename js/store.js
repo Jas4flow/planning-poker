@@ -77,6 +77,8 @@ export function createStory({ title, description = "", key = null, url = null, v
     // whether *this room* has estimated the story yet, not where it sits in
     // Jira's workflow.
     jiraStatus: null,
+    jiraAssignee: null, // display name, for showing without another round trip
+    jiraAssigneeId: null, // Jira accountId — what setAssignee actually needs
     finalEstimate: null,
     jiraPoints: null,
     jiraSyncedAt: null,

@@ -39,6 +39,7 @@ import {
   openAddStoryFromJira,
   openManualStory,
   openJqlImport,
+  openImportFromBacklog,
   openPickEstimate,
   openUpdatePoints,
   openChangeStatus,
@@ -556,12 +557,48 @@ let pendingRole = null;
  */
 let statusPicker = null; // { storyId, loading, applying, transitions, error }
 
+/** Same idea as statusPicker above, but with a live search box instead of a fixed list. */
+let assigneePicker = null; // { storyId, query, loading, applying, results, error }
+let assigneeSearchTimer = null;
+
 document.addEventListener("click", (event) => {
   if (statusPicker && !event.target.closest(".status-picker")) {
     statusPicker = null;
     render();
   }
+  if (assigneePicker && !event.target.closest(".assignee-picker")) {
+    assigneePicker = null;
+    render();
+  }
 });
+
+/** Debounced so every keystroke does not fire its own request. */
+document.addEventListener("input", (event) => {
+  const input = event.target.closest("#assignee-search");
+  if (!input || !assigneePicker) return;
+  const story = session?.store.getState()?.stories.find((s) => s.id === assigneePicker.storyId);
+  if (!story?.key) return;
+  const query = input.value;
+  assigneePicker = { ...assigneePicker, query, loading: true };
+  clearTimeout(assigneeSearchTimer);
+  assigneeSearchTimer = setTimeout(() => loadAssignees(story.key, story.id, query), 300);
+  render();
+});
+
+function loadAssignees(key, storyId, query) {
+  jira
+    .searchAssignableUsers(key, query)
+    .then((results) => {
+      if (assigneePicker?.storyId !== storyId) return; // closed, or moved on, while this was in flight
+      assigneePicker = { ...assigneePicker, loading: false, results, error: null };
+      render();
+    })
+    .catch((error) => {
+      if (assigneePicker?.storyId !== storyId) return;
+      assigneePicker = { ...assigneePicker, loading: false, results: [], error: errorText(error) };
+      render();
+    });
+}
 
 /* ---------- Overlay ---------- */
 
@@ -602,6 +639,7 @@ function context(room) {
     now: Date.now(),
     inviteUrl: session?.meta?.invite_token ? db.inviteUrl(session.meta.invite_token) : "",
     statusPicker,
+    assigneePicker,
   };
 }
 
@@ -831,6 +869,11 @@ const actions = {
     if (room && room.hostId !== me.id) return toast("Only the host can import stories.", "warn");
     openJqlImport({ store: session.store });
   },
+  "import-backlog": () => {
+    const room = session.store.getState();
+    if (room && room.hostId !== me.id) return toast("Only the host can import stories.", "warn");
+    openImportFromBacklog({ store: session.store });
+  },
   "edit-story": () => {
     const story = activeStory(session.store.getState());
     if (story) openManualStory({ store: session.store, story });
@@ -917,6 +960,45 @@ const actions = {
         render();
       });
   },
+  "toggle-assignee-picker": () => {
+    const story = activeStory(session.store.getState());
+    if (!story?.key) return;
+    if (assigneePicker?.storyId === story.id) {
+      assigneePicker = null;
+      render();
+      return;
+    }
+    assigneePicker = { storyId: story.id, query: "", loading: true, applying: false, results: null, error: null };
+    render();
+    loadAssignees(story.key, story.id, "");
+  },
+  "pick-assignee": (el) => {
+    if (!assigneePicker || assigneePicker.applying) return;
+    const room = session.store.getState();
+    const story = room.stories.find((s) => s.id === assigneePicker.storyId);
+    if (!story?.key) return;
+    const accountId = el.dataset.accountId || null;
+    const name = el.dataset.name || "";
+    assigneePicker = { ...assigneePicker, applying: true, error: null };
+    render();
+    jira
+      .setAssignee(story.key, accountId)
+      .then(() => {
+        session.store.dispatch({
+          type: "UPDATE_STORY",
+          id: story.id,
+          patch: { jiraAssignee: accountId ? name : null, jiraAssigneeId: accountId },
+        });
+        toast(accountId ? `${story.key} assigned to ${name}.` : `${story.key} unassigned.`, "ok");
+        assigneePicker = null;
+        render();
+      })
+      .catch((error) => {
+        if (assigneePicker?.storyId !== story.id) return;
+        assigneePicker = { ...assigneePicker, applying: false, error: errorText(error) };
+        render();
+      });
+  },
   "next-story": () => {
     const room = session.store.getState();
     const index = room.stories.findIndex((s) => s.id === room.activeStoryId);
@@ -938,6 +1020,8 @@ const actions = {
           description: issue.description,
           jiraPoints: issue.points,
           jiraStatus: issue.status || null,
+          jiraAssignee: issue.assignee || null,
+          jiraAssigneeId: issue.assigneeId || null,
           url: issue.url,
         },
       });

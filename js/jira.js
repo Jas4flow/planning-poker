@@ -470,6 +470,32 @@ export async function getIssue(keyOrRef, config = loadConfig()) {
   return toStory(issue, config);
 }
 
+/** People Jira would actually let you assign this issue to — scoped to the issue's project/permissions. */
+export async function searchAssignableUsers(key, query = "", config = loadConfig()) {
+  if (config.mock) return mock.searchAssignableUsers(key, query);
+
+  const params = new URLSearchParams({ issueKey: key, maxResults: "20" });
+  if (query) params.set("query", query);
+  const data = await request(`/rest/api/3/user/assignable/search?${params}`, { config });
+  return (Array.isArray(data) ? data : []).map((u) => ({
+    accountId: u.accountId,
+    name: u.displayName || u.emailAddress || u.accountId,
+    email: u.emailAddress || "",
+    avatarUrl: u.avatarUrls?.["24x24"] || "",
+  }));
+}
+
+/** `accountId: null` unassigns the issue. */
+export async function setAssignee(key, accountId, config = loadConfig()) {
+  if (config.mock) return mock.setAssignee(key, accountId);
+
+  await request(`/rest/api/3/issue/${encodeURIComponent(key)}/assignee`, {
+    method: "PUT",
+    body: { accountId: accountId || null },
+    config,
+  });
+}
+
 /**
  * The transitions actually available from this issue's CURRENT workflow
  * state — not a fixed list. Jira workflows restrict which status changes are
@@ -560,6 +586,42 @@ export async function searchIssues(jql, config = loadConfig(), maxResults = 25) 
   return (payload?.issues || []).map((issue) => toStory(issue, config));
 }
 
+/** Every project this account can see, for the "import from backlog" picker. */
+export async function listProjects(config = loadConfig()) {
+  if (config.mock) return mock.listProjects();
+
+  const projects = [];
+  let startAt = 0;
+  // Jira paginates at up to 50/100 per page depending on the instance — most
+  // accounts have far fewer projects than that, but a large instance still
+  // needs every page for the picker's search to actually find everything.
+  for (;;) {
+    const data = await request(`/rest/api/3/project/search?maxResults=100&startAt=${startAt}&orderBy=name`, {
+      config,
+    });
+    for (const p of data?.values || []) projects.push({ id: p.id, key: p.key, name: p.name });
+    if (data?.isLast !== false || !data?.values?.length) break;
+    startAt += data.values.length;
+  }
+  return projects;
+}
+
+/**
+ * The open issues in a project, ranked as they sit in the backlog. This asks
+ * the plain issue-search API with a project-scoped JQL rather than the Jira
+ * Software agile API (`/rest/agile/1.0/board/{id}/backlog`), since that needs
+ * a board id a project may not have (or may have several of) — "open, in
+ * rank order" is a close enough stand-in for "the backlog" for picking what
+ * to bring into a room.
+ */
+export async function projectBacklog(projectKey, config = loadConfig()) {
+  if (config.mock) {
+    const all = await mock.searchIssues(`project = "${projectKey}"`, config, 100);
+    return all.filter((s) => s.status !== "Done");
+  }
+  return searchIssues(`project = "${projectKey}" AND statusCategory != Done ORDER BY Rank ASC`, config, 100);
+}
+
 export async function listFields(config = loadConfig()) {
   if (config.mock) return mock.listFields(config);
   const fields = await request("/rest/api/3/field", { config });
@@ -603,6 +665,7 @@ export function toStory(issue, config = loadConfig()) {
     type: fields.issuetype?.name || "",
     priority: fields.priority?.name || "",
     assignee: fields.assignee?.displayName || "",
+    assigneeId: fields.assignee?.accountId || null,
     labels: Array.isArray(fields.labels) ? fields.labels : [],
   };
 }

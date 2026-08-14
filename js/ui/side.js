@@ -41,6 +41,7 @@ export function renderStoryPanel(room, ctx) {
              <button class="btn btn--sm btn--primary" type="button" data-act="add-story">Add from Jira</button>
              <button class="btn btn--sm" type="button" data-act="add-story-manual">Add by hand</button>
              <button class="btn btn--sm" type="button" data-act="import-jql">Import by JQL</button>
+             <button class="btn btn--sm" type="button" data-act="import-backlog">Import from backlog</button>
            </div>`
         : ""
     }
@@ -81,6 +82,7 @@ function storyNow(story, ctx, room) {
             : `<span class="points points--pending">–</span>`
         }
       </div>
+      ${assigneeRow(story, ctx)}
       <h2 class="story-now__title">${escapeHtml(story.title)}</h2>
       ${
         story.description
@@ -127,6 +129,63 @@ function storyNow(story, ctx, room) {
       </div>
       ${ctx.isHost ? "" : `<p class="hint">Anyone can write the agreed estimate back to Jira with their own credentials.</p>`}
     </article>`;
+}
+
+function assigneeRow(story, ctx) {
+  const canEdit = ctx.isOwner && story.key;
+  if (!story.jiraAssignee && !canEdit) return "";
+
+  const avatar = `<span class="seat__avatar" style="width:20px;height:20px;font-size:9px">${
+    story.jiraAssignee ? escapeHtml(initials(story.jiraAssignee)) : "?"
+  }</span>`;
+  const label = story.jiraAssignee ? escapeHtml(story.jiraAssignee) : "Unassigned";
+
+  if (!canEdit) {
+    return `<div class="story-now__meta">${avatar} <span class="muted">${label}</span></div>`;
+  }
+
+  return `
+    <div class="story-now__meta assignee-picker">
+      <button class="btn btn--sm btn--ghost assignee-picker__trigger" type="button" data-act="toggle-assignee-picker"
+              aria-expanded="${ctx.assigneePicker?.storyId === story.id}" title="Change assignee in Jira">
+        ${avatar} ${label} ▾
+      </button>
+      ${ctx.assigneePicker?.storyId === story.id ? assigneePickerMenu(story, ctx.assigneePicker) : ""}
+    </div>`;
+}
+
+function assigneePickerMenu(story, picker) {
+  const rows = picker.error
+    ? `<p class="status-picker__error">${escapeHtml(picker.error)}</p>`
+    : picker.loading
+    ? `<p class="status-picker__loading">Searching…</p>`
+    : !picker.results?.length
+    ? `<p class="status-picker__empty">No matching people.</p>`
+    : picker.results
+        .map(
+          (u) => `
+        <button class="status-picker__option" type="button" role="menuitem"
+                data-act="pick-assignee" data-account-id="${escapeHtml(u.accountId)}" data-name="${escapeHtml(u.name)}"
+                ${picker.applying ? "disabled" : ""}>
+          <span>${escapeHtml(u.name)}</span>
+        </button>`
+        )
+        .join("");
+
+  return `
+    <div class="status-picker__menu assignee-picker__menu" role="menu">
+      <input class="input" id="assignee-search" type="text" placeholder="Search people…"
+             value="${escapeHtml(picker.query)}" autofocus>
+      ${
+        story.jiraAssignee
+          ? `<button class="status-picker__option" type="button" role="menuitem"
+               data-act="pick-assignee" data-account-id="" data-name="" ${picker.applying ? "disabled" : ""}>
+               <span>Unassign</span>
+             </button>`
+          : ""
+      }
+      <div class="assignee-picker__results">${rows}</div>
+    </div>`;
 }
 
 /**
