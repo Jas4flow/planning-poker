@@ -529,10 +529,13 @@ async function showJoin(token) {
     button.disabled = true;
     button.textContent = "Joining…";
     try {
-      // Always go through signInAsGuest — it reuses existing anonymous
-      // sessions but signs out non-anonymous ones (e.g. the host opening
-      // the invite in the same browser) to create a fresh guest identity.
-      await db.signInAsGuest(name);
+      // Always go through signInAsGuest. Passing the invite token lets it
+      // resume the same guest identity if this exact invite was joined
+      // before in this browser (bringing that participant back online
+      // instead of creating a duplicate) — anything else still gets a
+      // fresh identity, including a non-anonymous session already in this
+      // browser (e.g. the host opening their own invite link).
+      await db.signInAsGuest(name, token);
       await refreshAuth();
       const roomId = await db.redeemInvite(token, name, role);
       pendingRole = role;

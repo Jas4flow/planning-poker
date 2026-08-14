@@ -8,6 +8,7 @@
  */
 
 import { connection, SUPABASE_JS } from "./config.js";
+import { readJson, writeJson, removeKey } from "./util.js";
 
 let clientPromise = null;
 
@@ -194,21 +195,50 @@ export async function signInOrSignUp(email, password, displayName) {
   return { user: fresh.data.user, created: true };
 }
 
+/** Where this browser remembers a guest identity for a specific invite. */
+function guestSessionKey(inviteToken) {
+  return `pp:guest-session:${inviteToken}`;
+}
+
 /**
  * A throwaway account for someone who only wants to vote in one session.
  *
- * Always starts a brand new anonymous identity rather than reusing whatever
- * session happens to already be there. Reusing "if it's already a guest" was
- * tried first, but a tab opened *from a link* (middle-click, ctrl-click,
- * "open in new tab" on the invite link) inherits a copy of the opener tab's
- * sessionStorage per the HTML spec — so a second tab could silently carry
- * over the first tab's guest identity even though sessionStorage is
- * otherwise per-tab. Signing out first closes that loophole: every explicit
- * "Join the session" click is a fresh person, no matter how the tab got
- * there.
+ * Signing in as a guest always starts fresh rather than reusing whatever
+ * anonymous session happens to already be sitting in the browser — a tab
+ * opened *from a link* (middle-click, ctrl-click, "open in new tab" on the
+ * invite link) inherits a copy of the opener tab's sessionStorage per the
+ * HTML spec, so blindly reusing "already a guest" let a second, genuinely
+ * different tab silently inherit the first tab's identity.
+ *
+ * But closing the tab and coming back to the *same* invite later should
+ * resume the same person rather than leave their old entry stranded offline
+ * and hand them a duplicate — so, scoped narrowly to that one invite token
+ * (never globally), this saves the session's tokens to localStorage and
+ * tries to restore them before creating a new identity. Two tabs open to the
+ * same invite at once will still resolve to the same saved session — that
+ * is the accepted trade-off for making a real rejoin work; anything other
+ * than "reopen this exact invite" still gets a clean new guest.
  */
-export async function signInAsGuest(displayName) {
+export async function signInAsGuest(displayName, inviteToken) {
   const supabase = await client();
+  const key = inviteToken ? guestSessionKey(inviteToken) : null;
+  const saved = key ? readJson(key, null) : null;
+
+  if (saved?.access_token && saved?.refresh_token) {
+    const { data, error } = await supabase.auth.setSession({
+      access_token: saved.access_token,
+      refresh_token: saved.refresh_token,
+    });
+    if (!error && data?.user && isGuest(data.user)) {
+      if (displayName) await setDisplayName(displayName);
+      // The refresh may have rotated the tokens — keep the saved copy current.
+      if (data.session) writeJson(key, { access_token: data.session.access_token, refresh_token: data.session.refresh_token });
+      return data.user;
+    }
+    // Stale or revoked — fall through and mint a fresh identity instead.
+    if (key) removeKey(key);
+  }
+
   const existing = await currentUser();
   if (existing) await supabase.auth.signOut();
   const { data, error } = await supabase.auth.signInAnonymously({
@@ -216,6 +246,9 @@ export async function signInAsGuest(displayName) {
   });
   if (error) throw new SupabaseError(describe(error, "Could not start a guest session."), { code: error.code });
   await setDisplayName(displayName);
+  if (key && data.session) {
+    writeJson(key, { access_token: data.session.access_token, refresh_token: data.session.refresh_token });
+  }
   return data.user;
 }
 
