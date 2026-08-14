@@ -234,7 +234,9 @@ document.addEventListener("pointerdown", (event) => {
   } catch {
     /* the window listeners below carry the drag on their own */
   }
-  storyDrag = { list, item, startY: event.clientY };
+  // Distance from the pointer down to the row's own top edge, so the row
+  // keeps the same spot under the cursor rather than snapping its top to it.
+  storyDrag = { list, item, pointerOffset: event.clientY - item.getBoundingClientRect().top };
   item.classList.add("story-item--dragging");
   list.classList.add("story-list--reordering");
   window.addEventListener("pointermove", onStoryDragMove);
@@ -244,9 +246,7 @@ document.addEventListener("pointerdown", (event) => {
 
 function onStoryDragMove(event) {
   if (!storyDrag) return;
-  const { list, item, startY } = storyDrag;
-  // Follow the pointer 1:1 — no transition here, or it would lag behind.
-  item.style.transform = `translateY(${event.clientY - startY}px) scale(1.02)`;
+  const { list, item, pointerOffset } = storyDrag;
 
   const target =
     Array.from(list.children)
@@ -254,25 +254,40 @@ function onStoryDragMove(event) {
       .find(
         (sibling) => event.clientY < sibling.getBoundingClientRect().top + sibling.getBoundingClientRect().height / 2
       ) || null;
-  if (target === item.nextElementSibling || (target === null && item === list.lastElementChild)) return;
+  const displaced = target !== item.nextElementSibling && !(target === null && item === list.lastElementChild);
 
-  // FLIP the rows this displaces: record where they are now, move the node,
-  // then glide each shifted row from its old spot to its new one.
-  const before = new Map(Array.from(list.children).map((el) => [el, el.getBoundingClientRect()]));
-  if (target) list.insertBefore(item, target);
-  else list.appendChild(item);
-  for (const el of list.children) {
-    if (el === item) continue;
-    const prev = before.get(el);
-    const dy = prev.top - el.getBoundingClientRect().top;
-    if (!dy) continue;
-    el.style.transition = "none";
-    el.style.transform = `translateY(${dy}px)`;
-    requestAnimationFrame(() => {
-      el.style.transition = "";
-      el.style.transform = "";
-    });
+  if (displaced) {
+    // FLIP the rows this displaces: record where they are now, move the
+    // node — measuring its OWN layout slot first, with the drag transform
+    // cleared, since insertBefore repositions it in the flow and a stale
+    // transform would measure the wrong spot — then glide each shifted row
+    // from its old position to its new one.
+    item.style.transform = "";
+    const before = new Map(Array.from(list.children).map((el) => [el, el.getBoundingClientRect()]));
+    if (target) list.insertBefore(item, target);
+    else list.appendChild(item);
+    for (const el of list.children) {
+      if (el === item) continue;
+      const prev = before.get(el);
+      const dy = prev.top - el.getBoundingClientRect().top;
+      if (!dy) continue;
+      el.style.transition = "none";
+      el.style.transform = `translateY(${dy}px)`;
+      requestAnimationFrame(() => {
+        el.style.transition = "";
+        el.style.transform = "";
+      });
+    }
   }
+
+  // Follow the pointer, anchored to the row's current layout slot (which the
+  // reorder above may just have changed) rather than its position back when
+  // the drag started — otherwise each reorder leaves the row's translateY
+  // pointing at a spot the pointer has since moved away from.
+  item.style.transform = "";
+  const layoutTop = item.getBoundingClientRect().top;
+  const desiredTop = event.clientY - pointerOffset;
+  item.style.transform = `translateY(${desiredTop - layoutTop}px) scale(1.02)`;
 }
 
 function onStoryDragEnd() {

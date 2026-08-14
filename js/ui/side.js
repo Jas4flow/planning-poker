@@ -364,6 +364,7 @@ export function renderHistoryPanel(room, ctx) {
         })
         .join("");
 
+      const isOnBoard = story.status !== "archived" && story.id === room.activeStoryId;
       return `
         <div>
           <div class="side__section-title">
@@ -372,6 +373,21 @@ export function renderHistoryPanel(room, ctx) {
             ${
               story.finalEstimate !== null && story.finalEstimate !== undefined
                 ? `<span class="points">${escapeHtml(story.finalEstimate)}</span>`
+                : ""
+            }
+            ${
+              ctx?.isOwner
+                ? `<button class="btn btn--icon" type="button" data-act="update-points-history" data-id="${story.id}"
+                     aria-label="Update ${escapeHtml(story.title)}'s story point in Jira"
+                     title="Update story point in Jira">✎</button>`
+                : ""
+            }
+            ${
+              !isOnBoard
+                ? `<button class="btn btn--icon" type="button"
+                     data-act="${story.status === "archived" ? "restore-story" : "set-active-story"}" data-id="${story.id}"
+                     aria-label="Put ${escapeHtml(story.title)} back on the story board"
+                     title="Put back on the story board">↩</button>`
                 : ""
             }
           </div>
