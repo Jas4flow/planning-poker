@@ -22,6 +22,11 @@ export async function client() {
           persistSession: true,
           autoRefreshToken: true,
           detectSessionInUrl: true,
+          // localStorage is shared by every tab of the browser, so a second
+          // tab joining under a different name would silently become the
+          // same participant as the first. sessionStorage is per-tab, so
+          // each tab gets its own guest identity instead.
+          storage: window.sessionStorage,
         },
         realtime: { params: { eventsPerSecond: 20 } },
       });
