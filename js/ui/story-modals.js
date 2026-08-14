@@ -84,6 +84,7 @@ export function openAddStoryFromJira({ store, activate = true }) {
             url: issue.url,
           });
           story.jiraPoints = issue.points;
+          story.jiraStatus = issue.status || null;
           if (issue.points !== null && issue.points !== undefined) {
             story.finalEstimate = String(issue.points);
           }
@@ -307,6 +308,7 @@ export function openJqlImport({ store }) {
           url: issue.url,
         });
         story.jiraPoints = issue.points;
+        story.jiraStatus = issue.status || null;
         store.dispatch({ type: "ADD_STORY", story });
         existing.add(issue.key);
         added += 1;

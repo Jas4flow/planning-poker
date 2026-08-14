@@ -71,7 +71,12 @@ export function createStory({ title, description = "", key = null, url = null, v
     title: String(title || "Untitled story").slice(0, 300),
     description,
     votingEnabled: Boolean(votingEnabled),
-    status: "pending", // pending | estimated
+    status: "pending", // pending | estimated | archived — this app's own estimation-flow state
+    // The issue's actual Jira workflow status (e.g. "To Do", "In Progress",
+    // "Done") — a separate thing from `status` above, which only tracks
+    // whether *this room* has estimated the story yet, not where it sits in
+    // Jira's workflow.
+    jiraStatus: null,
     finalEstimate: null,
     jiraPoints: null,
     jiraSyncedAt: null,

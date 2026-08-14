@@ -859,7 +859,13 @@ const actions = {
       session.store.dispatch({
         type: "UPDATE_STORY",
         id: story.id,
-        patch: { title: issue.title, description: issue.description, jiraPoints: issue.points, url: issue.url },
+        patch: {
+          title: issue.title,
+          description: issue.description,
+          jiraPoints: issue.points,
+          jiraStatus: issue.status || null,
+          url: issue.url,
+        },
       });
       toast(`${issue.key} refreshed from Jira.`, "ok");
     } catch (error) {

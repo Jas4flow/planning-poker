@@ -62,6 +62,7 @@ function storyNow(story, ctx, room) {
             : ""
         }
         <div class="spacer"></div>
+        ${story.jiraStatus ? `<span class="chip chip--teal">${escapeHtml(story.jiraStatus)}</span>` : ""}
         ${
           story.finalEstimate !== null && story.finalEstimate !== undefined
             ? `<span class="points">${escapeHtml(story.finalEstimate)}</span>`
@@ -130,6 +131,7 @@ function storyRow(story, room, ctx) {
         <div class="story-item__title">${escapeHtml(story.title)}</div>
         <div class="story-item__meta">
           ${story.key ? `<span>${escapeHtml(story.key)}</span>` : "<span>manual</span>"}
+          ${story.jiraStatus ? `<span class="chip chip--teal" style="font-size:10px;padding:1px 5px">${escapeHtml(story.jiraStatus)}</span>` : ""}
           ${story.votingEnabled ? '<span class="chip chip--ok" style="font-size:10px;padding:1px 5px">voting open</span>' : ""}
           ${story.rounds.length ? `<span>· ${story.rounds.length} round${story.rounds.length === 1 ? "" : "s"}</span>` : ""}
           ${story.jiraSyncedAt ? "<span>· synced</span>" : ""}
