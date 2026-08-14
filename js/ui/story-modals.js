@@ -261,18 +261,27 @@ export function openManualStory({ store, story = null }) {
 
 /* ---------- Import from backlog ---------- */
 
-const LAST_PROJECT_KEY = "pp:jira-last-project";
+const LAST_PROJECTS_KEY = "pp:jira-last-projects";
+
+/** Tolerates the old single-string shape this key used to hold. */
+function rememberedProjectKeys() {
+  const raw = readJson(LAST_PROJECTS_KEY, []);
+  if (Array.isArray(raw)) return raw;
+  return raw ? [raw] : [];
+}
 
 /**
- * Project → its open issues, picked by checkbox. Two lists in one modal
- * rather than a wizard: switching projects just reloads the issue list
- * below, so there is nothing to step back through.
+ * Search picks one or more projects — each click adds it as a chip and clears
+ * the search box for the next one, rather than replacing a single selection —
+ * and the combined open issues across all of them land in one checklist
+ * below, so a multi-project backlog does not need repeating the whole flow
+ * once per project.
  */
 export function openImportFromBacklog({ store, activate = false }) {
   const config = jira.loadConfig();
   let projects = [];
-  let selectedKey = readJson(LAST_PROJECT_KEY, null);
-  let issues = null; // null = not loaded yet for the current selection
+  const selectedKeys = new Set(); // filled once `projects` resolves and remembered keys are validated against it
+  const issuesByProject = new Map(); // key -> { status: "loading"|"ready"|"error", issues, message }
   let checked = new Set();
 
   const handle = openModal({
@@ -281,13 +290,14 @@ export function openImportFromBacklog({ store, activate = false }) {
     body: `
       <div class="field">
         <label for="backlog-search">Project</label>
+        <div class="stack stack--tight" id="backlog-chips"></div>
         <input class="input" id="backlog-search" placeholder="Search projects…" autocomplete="off">
       </div>
       <div class="stack stack--tight" id="backlog-projects" style="max-height:160px; overflow-y:auto">
         <p class="hint">Loading projects…</p>
       </div>
       <div id="backlog-issues" style="margin-top: var(--sp-4)">
-        <p class="hint">Pick a project to see its open issues.</p>
+        <p class="hint">Pick one or more projects to see their open issues.</p>
       </div>
       ${
         jira.configProblem(config)
@@ -305,10 +315,27 @@ export function openImportFromBacklog({ store, activate = false }) {
     openSettings({ onSaved: () => openImportFromBacklog({ store, activate }) })
   );
 
+  const chipsHost = handle.body.querySelector("#backlog-chips");
   const projectsHost = handle.body.querySelector("#backlog-projects");
   const issuesHost = handle.body.querySelector("#backlog-issues");
   const addButton = handle.footer.querySelector("[data-add]");
   const searchInput = handle.body.querySelector("#backlog-search");
+
+  function renderChips() {
+    chipsHost.innerHTML = Array.from(selectedKeys)
+      .map((key) => {
+        const project = projects.find((p) => p.key === key);
+        return `
+        <button class="chip chip--brand chip--btn" type="button" data-remove-project="${escapeHtml(key)}"
+                title="Remove ${escapeHtml(key)}">
+          ${escapeHtml(key)}${project ? ` — ${escapeHtml(project.name)}` : ""} ×
+        </button>`;
+      })
+      .join("");
+    chipsHost.querySelectorAll("[data-remove-project]").forEach((chip) => {
+      chip.addEventListener("click", () => toggleProject(chip.dataset.removeProject));
+    });
+  }
 
   function renderProjects(filterText = "") {
     const text = filterText.trim().toLowerCase();
@@ -322,60 +349,102 @@ export function openImportFromBacklog({ store, activate = false }) {
     projectsHost.innerHTML = visible
       .map(
         (p) => `
-      <button class="btn btn--block${p.key === selectedKey ? " btn--primary" : ""}" type="button"
+      <button class="btn btn--block${selectedKeys.has(p.key) ? " btn--primary" : ""}" type="button"
               data-project-key="${escapeHtml(p.key)}" style="justify-content:flex-start">
         <strong>${escapeHtml(p.key)}</strong>&nbsp;<span class="muted">${escapeHtml(p.name)}</span>
+        ${selectedKeys.has(p.key) ? "&nbsp;✓" : ""}
       </button>`
       )
       .join("");
     projectsHost.querySelectorAll("[data-project-key]").forEach((button) => {
-      button.addEventListener("click", () => selectProject(button.dataset.projectKey));
+      button.addEventListener("click", () => toggleProject(button.dataset.projectKey));
     });
   }
 
-  async function selectProject(key) {
-    if (key === selectedKey && issues) return;
-    selectedKey = key;
-    writeJson(LAST_PROJECT_KEY, key);
-    renderProjects(searchInput.value);
-    issues = null;
-    checked = new Set();
-    updateAddButton();
-    issuesHost.innerHTML = `<p class="hint">Loading ${escapeHtml(key)}’s backlog…</p>`;
-    try {
-      issues = await jira.projectBacklog(key, config);
-      renderIssues();
-    } catch (error) {
-      issuesHost.innerHTML = `<p class="note note--danger">${escapeHtml(errorText(error))}</p>`;
+  function toggleProject(key) {
+    if (selectedKeys.has(key)) {
+      selectedKeys.delete(key);
+    } else {
+      selectedKeys.add(key);
+      searchInput.value = ""; // ready to search for the next one
+      if (!issuesByProject.has(key)) loadProject(key);
     }
+    writeJson(LAST_PROJECTS_KEY, Array.from(selectedKeys));
+    renderChips();
+    renderProjects(searchInput.value);
+    renderIssues();
+  }
+
+  async function loadProject(key) {
+    issuesByProject.set(key, { status: "loading" });
+    renderIssues();
+    try {
+      const issues = await jira.projectBacklog(key, config);
+      issuesByProject.set(key, { status: "ready", issues });
+    } catch (error) {
+      issuesByProject.set(key, { status: "error", message: errorText(error) });
+    }
+    renderIssues();
   }
 
   function renderIssues() {
-    const existing = new Set((store.getState()?.stories || []).map((s) => s.key).filter(Boolean));
-    if (!issues.length) {
-      issuesHost.innerHTML = `<p class="hint">No open issues in ${escapeHtml(selectedKey)}.</p>`;
+    if (!selectedKeys.size) {
+      issuesHost.innerHTML = `<p class="hint">Pick one or more projects to see their open issues.</p>`;
       return;
     }
+
+    const existing = new Set((store.getState()?.stories || []).map((s) => s.key).filter(Boolean));
+    // Drop selections for issues whose project got removed, or that someone
+    // else has since added, so "N selected" never counts something no longer
+    // choosable.
+    for (const key of checked) {
+      const projectKey = key.split("-")[0];
+      if (!selectedKeys.has(projectKey) || existing.has(key)) checked.delete(key);
+    }
+
+    const sections = Array.from(selectedKeys).map((key) => {
+      const entry = issuesByProject.get(key) || { status: "loading" };
+      if (entry.status === "loading") {
+        return `<p class="hint">Loading ${escapeHtml(key)}’s backlog…</p>`;
+      }
+      if (entry.status === "error") {
+        return `<p class="note note--danger">${escapeHtml(key)}: ${escapeHtml(entry.message)}</p>`;
+      }
+      if (!entry.issues.length) {
+        return `<p class="hint">No open issues in ${escapeHtml(key)}.</p>`;
+      }
+      return `
+        <div class="side__section-title">${escapeHtml(key)} <span class="chip">${entry.issues.length}</span></div>
+        <div class="stack stack--tight">
+          ${entry.issues
+            .map((issue) => {
+              const already = existing.has(issue.key);
+              return `
+            <label class="check" style="${already ? "opacity:0.5" : ""}">
+              <input type="checkbox" data-issue-key="${escapeHtml(issue.key)}"
+                     ${already ? "disabled" : ""} ${checked.has(issue.key) ? "checked" : ""}>
+              <span><strong>${escapeHtml(issue.key)}</strong> ${escapeHtml(issue.title)}</span>
+              ${already ? `<span class="chip">already in backlog</span>` : ""}
+              ${issue.status ? `<span class="chip chip--teal">${escapeHtml(issue.status)}</span>` : ""}
+            </label>`;
+            })
+            .join("")}
+        </div>`;
+    });
+
+    const anySelectable = Array.from(issuesByProject.values()).some(
+      (e) => e.status === "ready" && e.issues.some((i) => !existing.has(i.key))
+    );
+
     issuesHost.innerHTML = `
-      <div class="row row--tight" style="margin-bottom:var(--sp-2)">
-        <label class="check"><input type="checkbox" id="backlog-select-all"> Select all</label>
-        <div class="spacer"></div>
-        <span class="hint">${issues.length} open issue${issues.length === 1 ? "" : "s"}</span>
-      </div>
-      <div class="stack stack--tight" style="max-height:280px; overflow-y:auto">
-        ${issues
-          .map((issue) => {
-            const already = existing.has(issue.key);
-            return `
-          <label class="check" style="${already ? "opacity:0.5" : ""}">
-            <input type="checkbox" data-issue-key="${escapeHtml(issue.key)}" ${already ? "disabled" : ""}>
-            <span><strong>${escapeHtml(issue.key)}</strong> ${escapeHtml(issue.title)}</span>
-            ${already ? `<span class="chip">already in backlog</span>` : ""}
-            ${issue.status ? `<span class="chip chip--teal">${escapeHtml(issue.status)}</span>` : ""}
-          </label>`;
-          })
-          .join("")}
-      </div>`;
+      ${
+        anySelectable
+          ? `<div class="row row--tight" style="margin-bottom:var(--sp-2)">
+               <label class="check"><input type="checkbox" id="backlog-select-all"> Select all</label>
+             </div>`
+          : ""
+      }
+      <div style="max-height:320px; overflow-y:auto">${sections.join("")}</div>`;
 
     issuesHost.querySelectorAll("[data-issue-key]").forEach((input) => {
       input.addEventListener("change", () => {
@@ -385,14 +454,17 @@ export function openImportFromBacklog({ store, activate = false }) {
       });
     });
     const selectAll = issuesHost.querySelector("#backlog-select-all");
-    selectAll.addEventListener("change", () => {
-      issuesHost.querySelectorAll("[data-issue-key]:not(:disabled)").forEach((input) => {
-        input.checked = selectAll.checked;
-        if (selectAll.checked) checked.add(input.dataset.issueKey);
-        else checked.delete(input.dataset.issueKey);
+    if (selectAll) {
+      selectAll.addEventListener("change", () => {
+        issuesHost.querySelectorAll("[data-issue-key]:not(:disabled)").forEach((input) => {
+          input.checked = selectAll.checked;
+          if (selectAll.checked) checked.add(input.dataset.issueKey);
+          else checked.delete(input.dataset.issueKey);
+        });
+        updateAddButton();
       });
-      updateAddButton();
-    });
+    }
+    updateAddButton();
   }
 
   function updateAddButton() {
@@ -403,9 +475,10 @@ export function openImportFromBacklog({ store, activate = false }) {
   searchInput.addEventListener("input", () => renderProjects(searchInput.value));
 
   addButton.addEventListener("click", () => {
-    // Re-checked against the live room, not the snapshot the list was built
+    // Re-checked against the live room, not the snapshot the lists were built
     // from — someone else may have added one of these in the meantime.
     const existing = new Set((store.getState()?.stories || []).map((s) => s.key).filter(Boolean));
+    const allIssues = Array.from(issuesByProject.values()).flatMap((e) => e.issues || []);
     let added = 0;
     let skipped = 0;
     let firstAdded = null;
@@ -414,7 +487,7 @@ export function openImportFromBacklog({ store, activate = false }) {
         skipped += 1;
         continue;
       }
-      const issue = issues.find((i) => i.key === key);
+      const issue = allIssues.find((i) => i.key === key);
       if (!issue) continue;
       const story = createStory({ title: issue.title, description: issue.description, key: issue.key, url: issue.url });
       story.jiraPoints = issue.points;
@@ -447,8 +520,12 @@ export function openImportFromBacklog({ store, activate = false }) {
     .listProjects(config)
     .then((list) => {
       projects = list;
+      const remembered = rememberedProjectKeys().filter((key) => projects.some((p) => p.key === key));
+      remembered.forEach((key) => selectedKeys.add(key));
+      renderChips();
       renderProjects();
-      if (selectedKey && projects.some((p) => p.key === selectedKey)) selectProject(selectedKey);
+      renderIssues();
+      remembered.forEach((key) => loadProject(key));
     })
     .catch((error) => {
       projectsHost.innerHTML = `<p class="note note--danger">${escapeHtml(errorText(error))}</p>`;
