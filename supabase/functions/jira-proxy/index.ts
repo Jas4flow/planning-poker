@@ -77,7 +77,13 @@ serve(async (req) => {
     const responseText = await response.text();
     console.log(`${method} ${fullUrl} → ${response.status}`);
 
-    return new Response(responseText, {
+    // 204/205/304 are "null body" statuses — the Response constructor throws
+    // if given anything but a literal null for one of these, even "", which
+    // is exactly what Jira sends back from a successful PUT.
+    const NULL_BODY_STATUSES = [204, 205, 304];
+    const responseBody = NULL_BODY_STATUSES.includes(response.status) ? null : responseText;
+
+    return new Response(responseBody, {
       status: response.status,
       headers: {
         "Content-Type": response.headers.get("content-type") || "application/json",
