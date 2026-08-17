@@ -1149,6 +1149,25 @@ body.is-resizing {
   color: var(--text);
 }
 
+/*
+ * .story-item__actions button above (one class + one element) was forcing
+ * background: none onto the points button at all times except :hover, where
+ * its own background: var(--surface-sunken) briefly took over — which is
+ * exactly why the pending pill's grey only ever appeared on hover. Matching
+ * on button.points here too (not just .points) keeps this at least as
+ * specific as that rule's own :hover variant in every state, not just the
+ * plain one.
+ */
+.story-item__actions button.points {
+  background: var(--brand-teal-900);
+  color: #fff;
+}
+
+.story-item__actions button.points--pending {
+  background: var(--surface-sunken);
+  color: var(--text-faint);
+}
+
 .points {
   display: grid;
   place-items: center;
