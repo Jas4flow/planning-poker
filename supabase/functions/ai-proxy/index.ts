@@ -31,11 +31,18 @@ const corsHeaders = {
 };
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-// The `:free` suffix models on OpenRouter are rate-limited (roughly 20
-// requests/min and a daily cap on an account with no credit balance) — if
-// this starts erroring under real room usage, that is the first thing to
-// check before assuming the model itself broke.
-const DEFAULT_MODEL = "google/gemma-4-31b-it:free";
+// The `:free` suffix models on OpenRouter share a rate-limited upstream pool
+// across every OpenRouter user, not just this app — tried one at a time,
+// first to succeed wins, so one model being temporarily saturated doesn't
+// take the feature down. Order is preference (first = most desired), not a
+// priority queue with delays — a failure moves on immediately.
+const MODEL_CHAIN = [
+  "google/gemma-4-31b-it:free",
+  "google/gemma-4-26b-a4b-it:free",
+  "openai/gpt-oss-20b:free",
+  "nvidia/nemotron-nano-12b-v2-vl:free",
+  "z-ai/glm-5.2:free",
+];
 // A cost/abuse ceiling — every feature here is a short suggestion or
 // summary, none legitimately need a long completion.
 const MAX_TOKENS_CAP = 700;
@@ -77,54 +84,59 @@ serve(async (req) => {
     });
   }
 
-  const model = typeof body.model === "string" && body.model ? body.model : DEFAULT_MODEL;
   const requestedTokens = typeof body.maxTokens === "number" ? body.maxTokens : MAX_TOKENS_CAP;
   const maxTokens = Math.max(1, Math.min(requestedTokens, MAX_TOKENS_CAP));
+  // An explicit model from the caller is used as-is, no fallback — that is a
+  // deliberate choice, not something to second-guess. Otherwise walk the
+  // whole chain.
+  const modelsToTry = typeof body.model === "string" && body.model ? [body.model] : MODEL_CHAIN;
 
-  try {
-    const response = await fetch(OPENROUTER_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        // Not required for the request to work, but OpenRouter asks for
-        // these to attribute usage to the calling app.
-        "HTTP-Referer": "https://jas4flow.github.io/planning-poker/",
-        "X-Title": "Planning Poker",
-      },
-      body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature: 0.4, stream: false }),
-    });
-
-    const text = await response.text();
-    if (!response.ok) {
-      console.error(`OpenRouter API ${response.status}:`, text);
-      return new Response(JSON.stringify({ error: `The AI service returned an error (${response.status}).` }), {
-        status: 502,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      });
-    }
-
-    let payload: { choices?: { message?: { content?: string } }[] };
+  let lastError = "The AI service is unavailable.";
+  for (const model of modelsToTry) {
     try {
-      payload = JSON.parse(text);
-    } catch {
-      return new Response(JSON.stringify({ error: "The AI service returned an unreadable response." }), {
-        status: 502,
+      const response = await fetch(OPENROUTER_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          // Not required for the request to work, but OpenRouter asks for
+          // these to attribute usage to the calling app.
+          "HTTP-Referer": "https://jas4flow.github.io/planning-poker/",
+          "X-Title": "Planning Poker",
+        },
+        body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature: 0.4, stream: false }),
+      });
+
+      const text = await response.text();
+      if (!response.ok) {
+        console.error(`OpenRouter API (${model}) ${response.status}:`, text);
+        lastError = `The AI service returned an error (${response.status}).`;
+        continue; // try the next model in the chain
+      }
+
+      let payload: { choices?: { message?: { content?: string } }[] };
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        lastError = "The AI service returned an unreadable response.";
+        continue;
+      }
+
+      const reply = payload?.choices?.[0]?.message?.content?.trim() || "";
+      return new Response(JSON.stringify({ text: reply, model }), {
+        status: 200,
         headers: { "Content-Type": "application/json", ...corsHeaders },
       });
+    } catch (error) {
+      console.error(`ai-proxy error (${model}):`, error);
+      lastError = `Could not reach the AI service: ${error instanceof Error ? error.message : String(error)}`;
     }
-
-    const reply = payload?.choices?.[0]?.message?.content?.trim() || "";
-    return new Response(JSON.stringify({ text: reply }), {
-      status: 200,
-      headers: { "Content-Type": "application/json", ...corsHeaders },
-    });
-  } catch (error) {
-    console.error("ai-proxy error:", error);
-    return new Response(
-      JSON.stringify({ error: `Could not reach the AI service: ${error instanceof Error ? error.message : String(error)}` }),
-      { status: 502, headers: { "Content-Type": "application/json", ...corsHeaders } }
-    );
   }
+
+  // Every model in the chain failed.
+  return new Response(JSON.stringify({ error: lastError }), {
+    status: 502,
+    headers: { "Content-Type": "application/json", ...corsHeaders },
+  });
 });
