@@ -33,13 +33,26 @@ async function ask(messages, { maxTokens } = {}) {
 const SYSTEM_ESTIMATE =
   "You help a Scrum team estimate story points before they vote. Read the story and reply with ONLY a compact " +
   "JSON object: {\"value\": \"<one card from the given deck>\", \"reason\": \"<one short sentence>\"}. Pick the " +
-  "single closest card from the deck list provided — never invent a value outside it. No prose outside the JSON.";
+  "single closest card from the deck list provided — never invent a value outside it. " +
+  "If past estimated stories are given, calibrate against them — a guess grounded in this team's own past sizing " +
+  "beats one from general judgement alone, so lean on the closest comparable rather than picking in a vacuum. " +
+  "No prose outside the JSON.";
 
-/** A starting-point suggestion before the room votes — never auto-applied. */
-export async function suggestEstimate({ title, description, deckCards }) {
+/**
+ * A starting-point suggestion before the room votes — never auto-applied.
+ * `pastStories` (this room's own already-estimated stories, most recent
+ * first) grounds the guess in how this specific team actually sizes things,
+ * rather than a generic judgement call with nothing to calibrate against.
+ */
+export async function suggestEstimate({ title, description, deckCards, pastStories = [] }) {
+  const examples = pastStories
+    .slice(0, 8)
+    .map((s) => `- "${s.title}" → ${s.points}`)
+    .join("\n");
   const prompt =
     `Deck (pick exactly one of these): ${deckCards.join(", ")}\n\n` +
-    `Story: ${title}\n\n${description || "(no description)"}`;
+    (examples ? `This team's own past estimates, for calibration:\n${examples}\n\n` : "") +
+    `Story to estimate: ${title}\n\n${description || "(no description)"}`;
   const raw = await ask([
     { role: "system", content: SYSTEM_ESTIMATE },
     { role: "user", content: prompt },
@@ -128,9 +141,12 @@ For anything else (including a request that doesn't map to a supported action, o
 
 /**
  * @param {string} text - what the person typed
- * @param {{projects: {key:string,name:string}[], defaultProjectKey?: string}} context
+ * @param {{projects: {key:string,name:string}[], defaultProjectKey?: string, history?: {role:string, content:string}[]}} context
+ *   `history` is prior chat turns (plain {role, content} pairs, oldest first)
+ *   so a follow-up like "CUMA" after the AI asked "which project?" resolves
+ *   using the earlier turn instead of being judged on its own.
  */
-export async function interpretCommand(text, { projects, defaultProjectKey }) {
+export async function interpretCommand(text, { projects, defaultProjectKey, history = [] }) {
   const known = projects.map((p) => `${p.key} (${p.name})`).join(", ") || "(none)";
   const prompt =
     `Known projects: ${known}\n` +
@@ -138,6 +154,7 @@ export async function interpretCommand(text, { projects, defaultProjectKey }) {
     `Sentence: "${text}"`;
   const raw = await ask([
     { role: "system", content: SYSTEM_COMMAND },
+    ...history,
     { role: "user", content: prompt },
   ]);
   let parsed;

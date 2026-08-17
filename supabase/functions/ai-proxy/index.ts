@@ -31,7 +31,11 @@ const corsHeaders = {
 };
 
 const NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
-const DEFAULT_MODEL = "meta/llama-3.1-70b-instruct";
+// 3.3 supersedes 3.1 at the same 70B size — same cost, meaningfully better
+// instruction-following. A reasoning model (e.g. deepseek-r1) was also
+// considered, but those emit a <think> block before the answer, which would
+// need extra parsing our simple JSON-only prompts don't do.
+const DEFAULT_MODEL = "meta/llama-3.3-70b-instruct";
 // A cost/abuse ceiling — every feature here is a short suggestion or
 // summary, none legitimately need a long completion.
 const MAX_TOKENS_CAP = 700;

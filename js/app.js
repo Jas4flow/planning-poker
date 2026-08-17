@@ -21,7 +21,7 @@ import {
   formatClock,
   htmlToText,
 } from "./util.js";
-import { createStore, createRoom, activeStory, allVoted, castVotes } from "./store.js";
+import { createStore, createRoom, createStory, activeStory, allVoted, castVotes } from "./store.js";
 import { createSupabaseTransport } from "./transport.js";
 import * as db from "./supabase.js";
 import { deckCards, deckLabel, parseCustomDeck, DECKS } from "./decks.js";
@@ -32,7 +32,7 @@ import { createTicker, remainingSeconds, isTimerFinished } from "./timer.js";
 import { downloadCsv, downloadJson } from "./export.js";
 import { renderStage } from "./ui/seats.js";
 import { renderDeck } from "./ui/deck.js";
-import { renderStoryPanel, renderPeoplePanel, renderHistoryPanel } from "./ui/side.js";
+import { renderStoryPanel, renderPeoplePanel, renderHistoryPanel, renderAiChat } from "./ui/side.js";
 import { createChatFeed, renderChatBar, closeEmojiPicker } from "./ui/chat.js";
 import { mountLanding, renderLanding, renderNewPasswordCard } from "./ui/landing.js";
 import { openModal, closeModal, confirmDialog, promptDialog, isModalOpen } from "./ui/modals.js";
@@ -45,7 +45,6 @@ import {
   openPickEstimate,
   openUpdatePoints,
   openChangeStatus,
-  openAiCommand,
 } from "./ui/story-modals.js";
 
 const PREFS_KEY = "pp:prefs";
@@ -621,6 +620,79 @@ function storyText(story) {
   return htmlToText(story.description || "");
 }
 
+/** This room's own already-sized stories, most recent first — grounds AI estimate suggestions in this team's actual sizing. */
+function pastEstimatesFor(room, excludeId) {
+  return room.stories
+    .filter((s) => s.id !== excludeId && s.finalEstimate !== null && s.finalEstimate !== undefined)
+    .slice()
+    .reverse()
+    .map((s) => ({ title: s.title, points: s.finalEstimate }));
+}
+
+/**
+ * The "Ask AI" chat tab's whole state — a running local conversation, not
+ * room state (it's a personal assistant, not something to sync to everyone
+ * in the room). The model only ever proposes one action from ai.js's small
+ * fixed set via `pendingAction`; nothing executes until "Yes, do it" is
+ * clicked (aiChatConfirm below).
+ */
+let aiChat = { messages: [], busy: false, pendingAction: null };
+
+async function sendAiChatMessage(text) {
+  aiChat.messages.push({ role: "user", text });
+  aiChat.busy = true;
+  render();
+  try {
+    const projects = await jira.listProjects();
+    const remembered = (readJson("pp:jira-last-projects", []) || []).filter((key) => projects.some((p) => p.key === key));
+    const history = aiChat.messages.slice(0, -1).map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text }));
+    const result = await ai.interpretCommand(text, { projects, defaultProjectKey: remembered[0], history });
+    if (result.action === "unsupported") {
+      aiChat.messages.push({ role: "assistant", text: result.message });
+    } else {
+      aiChat.pendingAction = result; // rendered as a confirm bubble — see aiChatConfirm in side.js
+    }
+  } catch (error) {
+    aiChat.messages.push({ role: "assistant", text: errorText(error) });
+  } finally {
+    aiChat.busy = false;
+    render();
+  }
+}
+
+/** The one supported action today. Add a new `case` here to match a new entry in ai.js's SUPPORTED_ACTIONS. */
+async function runAiChatAction(pending) {
+  if (pending.action !== "import_all_backlog") {
+    aiChat.messages.push({ role: "assistant", text: "That action isn't wired up yet." });
+    return;
+  }
+  try {
+    const config = jira.loadConfig();
+    const issues = await jira.projectBacklog(pending.projectKey, config);
+    const existing = new Set((session.store.getState()?.stories || []).map((s) => s.key).filter(Boolean));
+    let added = 0;
+    for (const issue of issues) {
+      if (existing.has(issue.key)) continue;
+      const story = createStory({ title: issue.title, description: issue.description, key: issue.key, url: issue.url });
+      story.jiraPoints = issue.points;
+      story.jiraStatus = issue.status || null;
+      story.jiraAssignee = issue.assignee || null;
+      story.jiraAssigneeId = issue.assigneeId || null;
+      session.store.dispatch({ type: "ADD_STORY", story });
+      existing.add(issue.key);
+      added += 1;
+    }
+    aiChat.messages.push({
+      role: "assistant",
+      text: added
+        ? `Added ${added} issue${added === 1 ? "" : "s"} from ${pending.projectKey}.`
+        : `Nothing new to add — every open issue in ${pending.projectKey} is already in the backlog.`,
+    });
+  } catch (error) {
+    aiChat.messages.push({ role: "assistant", text: errorText(error) });
+  }
+}
+
 /* ---------- Overlay ---------- */
 
 function showOverlay(html) {
@@ -664,6 +736,7 @@ function context(room) {
     estimateSuggestion,
     descSummary,
     disagreementExplain,
+    aiChat,
   };
 }
 
@@ -693,6 +766,17 @@ function render() {
     ["SELECT", "INPUT"].includes(document.activeElement.tagName);
   if (sideTab === "people" && !peopleBusy) setHtml(peoplePanel, renderPeoplePanel(room, ctx));
   if (sideTab === "history") setHtml($("#panel-history"), renderHistoryPanel(room, ctx));
+  const aiTab = $("#tab-ai");
+  if (aiTab) aiTab.hidden = !ctx.isHost;
+  if (sideTab === "ai") {
+    // morphdom explicitly forces an <input>'s live value to match whatever
+    // the freshly-rendered HTML specifies (it has to, since the two can
+    // otherwise diverge the moment someone types) — our template has to
+    // reflect what is actually typed right now, or every periodic render
+    // (even one from an unrelated tick) resets it to empty mid-keystroke.
+    const draft = $("#ai-chat-input")?.value ?? "";
+    setHtml($("#panel-ai"), renderAiChat({ ...ctx, aiChatDraft: draft }));
+  }
 
   if (room.revealed && !wasRevealed) {
     if (prefs.sound) playReveal();
@@ -734,7 +818,6 @@ function header(room, ctx) {
     </button>
     <button class="btn btn--icon" type="button" data-act="toggle-theme" aria-label="Switch theme" title="Switch theme">◐</button>
     ${ctx.isOwner ? `<button class="btn btn--sm" type="button" data-act="settings">Jira</button>` : ""}
-    ${ctx.isHost ? `<button class="btn btn--sm" type="button" data-act="ask-ai" title="Ask AI to do something">✨ Ask AI</button>` : ""}
     <button class="btn btn--sm btn--ghost" type="button" data-act="leave">Leave</button>`;
 }
 
@@ -807,11 +890,6 @@ const actions = {
     render();
   },
   settings: () => openSettings({ onSaved: () => session && render() }),
-  "ask-ai": () => {
-    const room = session.store.getState();
-    if (room && room.hostId !== me.id) return toast("Only the host can use this.", "warn");
-    openAiCommand({ store: session.store });
-  },
   "go-home": () => {
     location.hash = "#/";
   },
@@ -1036,7 +1114,12 @@ const actions = {
     estimateSuggestion = { storyId: story.id, loading: true, value: null, reason: "", error: null };
     render();
     ai
-      .suggestEstimate({ title: story.title, description: storyText(story), deckCards: deckCards(room) })
+      .suggestEstimate({
+        title: story.title,
+        description: storyText(story),
+        deckCards: deckCards(room),
+        pastStories: pastEstimatesFor(room, story.id),
+      })
       .then(({ value, reason }) => {
         if (estimateSuggestion?.storyId !== story.id) return;
         estimateSuggestion = { storyId: story.id, loading: false, value, reason, error: null };
@@ -1091,6 +1174,21 @@ const actions = {
         disagreementExplain = { ...disagreementExplain, loading: false, error: error.message };
         render();
       });
+  },
+  "ai-chat-confirm": async () => {
+    const pending = aiChat.pendingAction;
+    if (!pending) return;
+    aiChat.pendingAction = null;
+    aiChat.busy = true;
+    render();
+    await runAiChatAction(pending);
+    aiChat.busy = false;
+    render();
+  },
+  "ai-chat-cancel": () => {
+    aiChat.pendingAction = null;
+    aiChat.messages.push({ role: "assistant", text: "Okay, cancelled." });
+    render();
   },
   "next-story": () => {
     const room = session.store.getState();
@@ -1315,6 +1413,19 @@ document.addEventListener("submit", (event) => {
   say({ name: me.name, text });
 });
 
+/* Ask AI chat: same Enter-to-send pattern, but local to the asker, not room chat. */
+document.addEventListener("submit", (event) => {
+  const form = event.target.closest("#ai-chat-form");
+  if (!form) return;
+  event.preventDefault();
+  if (!session || aiChat.busy || aiChat.pendingAction) return;
+  const input = form.querySelector("#ai-chat-input");
+  const text = input.value.trim();
+  input.value = "";
+  if (!text) return;
+  void sendAiChatMessage(text);
+});
+
 /* The emoji picker closes on a click anywhere else, or on Escape. */
 document.addEventListener("click", (event) => {
   if (!event.target.closest(".chat-bar__field")) closeEmojiPicker();
@@ -1387,7 +1498,7 @@ document.addEventListener("click", (event) => {
   $$("#side-tabs .side__tab").forEach((button) =>
     button.setAttribute("aria-selected", String(button.dataset.tab === sideTab))
   );
-  ["story", "people", "history"].forEach((name) => {
+  ["story", "people", "history", "ai"].forEach((name) => {
     $(`#panel-${name}`).hidden = name !== sideTab;
   });
   render();

@@ -715,6 +715,11 @@ body.is-resizing {
 .side__panel {
   display: flex;
   flex-direction: column;
+  /* Without this, a panel with little content (the AI chat, mostly) just
+     shrinks to fit and leaves dead space below it in .side, instead of
+     filling the sidebar — which is also what pins the chat's input to the
+     bottom instead of floating right under whatever content came before it. */
+  flex: 1;
   gap: var(--sp-4);
   min-height: 0;
   padding: var(--sp-4);
@@ -1313,4 +1318,53 @@ body.is-resizing {
     animation-duration: 0.001s !important;
     transition-duration: 0.001s !important;
   }
+}
+
+/* ---------- Ask AI (chat tab) ---------- */
+
+.ai-chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: var(--sp-3);
+}
+
+.ai-chat__messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.ai-chat__bubble {
+  max-width: 90%;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  white-space: pre-line;
+}
+
+.ai-chat__bubble--user {
+  align-self: flex-end;
+  background: var(--brand-teal-900);
+  color: #fff;
+}
+
+.ai-chat__bubble--assistant {
+  align-self: flex-start;
+  background: var(--surface-sunken);
+  color: var(--text);
+}
+
+.ai-chat__form {
+  display: flex;
+  gap: var(--sp-2);
+  flex-shrink: 0;
+}
+
+.ai-chat__form .input {
+  flex: 1;
 }

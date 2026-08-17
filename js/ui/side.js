@@ -546,3 +546,50 @@ export function renderHistoryPanel(room, ctx) {
       .join("")
   );
 }
+
+/* ---------- Ask AI (chat tab) ---------- */
+
+/**
+ * A persistent conversation rather than the one-shot modal this replaced —
+ * `ctx.aiChat` is plain state owned by app.js (same approach as the status
+ * and assignee pickers), so this just renders whatever it currently holds.
+ * The model only ever proposes one action from a small fixed set; nothing
+ * here executes anything until the person clicks "Yes, do it" on the
+ * confirmation bubble.
+ */
+export function renderAiChat(ctx) {
+  const chat = ctx.aiChat || { messages: [], busy: false, pendingAction: null };
+  const locked = chat.busy || Boolean(chat.pendingAction);
+  return `
+    <div class="ai-chat">
+      <div class="ai-chat__messages" id="ai-chat-messages">
+        ${
+          chat.messages.length
+            ? chat.messages.map(aiChatBubble).join("")
+            : `<p class="hint">Ask me to do something — e.g. "add all backlog stories for CUMA".</p>`
+        }
+        ${chat.busy ? `<div class="ai-chat__bubble ai-chat__bubble--assistant">✨ Thinking…</div>` : ""}
+        ${chat.pendingAction ? aiChatConfirm(chat.pendingAction) : ""}
+      </div>
+      <form class="ai-chat__form" id="ai-chat-form" autocomplete="off">
+        <input class="input" id="ai-chat-input" placeholder="Ask AI to do something…"
+               value="${escapeHtml(ctx.aiChatDraft || "")}" ${locked ? "disabled" : ""}>
+        <button class="btn btn--primary" type="submit" ${locked ? "disabled" : ""}>Send</button>
+      </form>
+    </div>`;
+}
+
+function aiChatBubble(msg) {
+  return `<div class="ai-chat__bubble ai-chat__bubble--${msg.role}">${escapeHtml(msg.text)}</div>`;
+}
+
+function aiChatConfirm(pending) {
+  return `
+    <div class="ai-chat__bubble ai-chat__bubble--assistant">
+      ${escapeHtml(pending.confirm)}
+      <div class="row row--tight" style="margin-top:var(--sp-2)">
+        <button class="btn btn--sm btn--primary" type="button" data-act="ai-chat-confirm">Yes, do it</button>
+        <button class="btn btn--sm btn--ghost" type="button" data-act="ai-chat-cancel">Cancel</button>
+      </div>
+    </div>`;
+}
