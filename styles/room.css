@@ -1360,6 +1360,67 @@ body.is-resizing {
   white-space: pre-line;
 }
 
+.ai-chat__form-wrap {
+  position: relative; /* anchors .ai-chat__suggest */
+}
+
+/* Hidden until the input (or a sample chip itself) has focus — :focus-within
+   covers both, since clicking a chip briefly moves focus to it without ever
+   leaving the wrapper. Shows regardless of how much chat history exists,
+   not just on the very first empty state. */
+.ai-chat__suggest {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + var(--sp-2));
+  left: 0;
+  right: 0;
+  padding: var(--sp-3);
+  border: 1px solid var(--panel-line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+}
+
+.ai-chat__form-wrap:focus-within .ai-chat__suggest {
+  display: block;
+}
+
+.ai-chat__suggest-label {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.ai-chat__samples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+/* Styled after .side__tab (the Story/People/History/AI tabs) — an
+   underline accent on hover instead of a filled button, so a suggested
+   prompt reads as "a quick way in", not a full-strength action button. */
+.ai-chat__sample {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--panel-line);
+  border-bottom: 2px solid transparent;
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease), color 0.15s var(--ease);
+}
+
+.ai-chat__sample:hover {
+  border-bottom-color: var(--brand-orange);
+  color: var(--text);
+}
+
 .ai-chat__bubble--user {
   align-self: flex-end;
   background: var(--brand-teal-900);

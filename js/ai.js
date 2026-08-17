@@ -124,23 +124,31 @@ export async function summarizeRound({ title, points, average, agreement, votes 
  * Add a new supported action here as its own case, not by loosening this
  * into "do anything the model says".
  */
-const SUPPORTED_ACTIONS = ["import_all_backlog", "remove_story", "change_status", "change_assignee"];
+const SUPPORTED_ACTIONS = [
+  "import_all_backlog",
+  "remove_story",
+  "remove_all_stories",
+  "change_status",
+  "change_assignee",
+];
 
 const SYSTEM_COMMAND = `You turn one sentence into exactly one app action, or say it isn't supported yet.
 Reply with ONLY a compact JSON object, no prose outside it.
 
 Supported actions:
-- "import_all_backlog": add every open (not-done) issue from a Jira project's backlog into the room.
-  Args: { "projectKey": "<the project key, e.g. CUMA>" }.
+- "import_all_backlog": add issues from a Jira project's backlog into the room.
+  Args: { "projectKey": "<the project key, e.g. CUMA>", "onlyMissingPoints": <true if they only want issues with no story points set yet, false or omitted for every open issue> }.
   If the sentence names a project key or a name matching one of the known projects, use it.
   If it names none and exactly one project is given as the default, use that default.
   If it names none and there is no default, respond unsupported and ask which project.
-- "remove_story": remove one story from the room's current backlog (below).
+- "remove_story": remove one specific story from the room's current backlog (below).
   Args: { "storyQuery": "<copied EXACTLY from the backlog list below — its key or its title, verbatim, do not paraphrase or shorten it>" }.
+- "remove_all_stories": remove every story currently in the room's backlog (a full clear, not just one). No args.
+  Use this only when they clearly mean everything ("all", "the whole backlog", "the current session") — a single named story is remove_story instead.
 - "change_status": move one story to a different Jira status.
-  Args: { "storyQuery": "<same as above>", "statusName": "<the plain status name they asked for, e.g. \"Done\", \"In Progress\" — not a transition button label>" }.
+  Args: { "storyQuery": "<same as remove_story>", "statusName": "<the plain status name they asked for, e.g. \"Done\", \"In Progress\" — not a transition button label>" }.
 - "change_assignee": assign one story to someone in Jira.
-  Args: { "storyQuery": "<same as above>", "personName": "<the name they said, as said>" }.
+  Args: { "storyQuery": "<same as remove_story>", "personName": "<the name they said, as said>" }.
 For remove_story/change_status/change_assignee, only use a storyQuery that actually appears in the backlog list given below — never invent or guess one.
 
 For a supported action, reply: {"action": "<name>", "args": {...}, "confirm": "<one short yes/no question describing exactly what will happen>"}
@@ -184,12 +192,26 @@ export async function interpretCommand(text, { projects, defaultProjectKey, stor
     if (!projectKey || !projects.some((p) => p.key === projectKey)) {
       return { action: "unsupported", message: "Which project? Name one, e.g. \"add all backlog stories for CUMA\"." };
     }
-    return { action: "import_all_backlog", projectKey, confirm: String(parsed.confirm || `Add every open issue in ${projectKey}?`) };
+    const onlyMissingPoints = Boolean(parsed.args?.onlyMissingPoints);
+    return {
+      action: "import_all_backlog",
+      projectKey,
+      onlyMissingPoints,
+      confirm: String(
+        parsed.confirm ||
+          (onlyMissingPoints
+            ? `Add ${projectKey}'s open issues that have no story points yet?`
+            : `Add every open issue in ${projectKey}?`)
+      ),
+    };
   }
   if (parsed.action === "remove_story") {
     const storyQuery = String(parsed.args?.storyQuery || "").trim();
     if (!storyQuery) return { action: "unsupported", message: "Which story? Name its title or key." };
     return { action: "remove_story", storyQuery };
+  }
+  if (parsed.action === "remove_all_stories") {
+    return { action: "remove_all_stories" };
   }
   if (parsed.action === "change_status") {
     const storyQuery = String(parsed.args?.storyQuery || "").trim();

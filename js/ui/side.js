@@ -25,6 +25,22 @@ export function renderStoryPanel(room, ctx) {
         <span class="chip chip--teal">${estimatedTotal(room)} pts</span>
       </div>
       ${
+        openStories(room).length > 1
+          ? `<div class="row row--tight" style="margin-bottom:var(--sp-2)">
+               <select class="select" data-act="sort-backlog" aria-label="Sort the backlog" style="width:auto">
+                 <option value="">Sort by…</option>
+                 <option value="title-asc">Title (A–Z)</option>
+                 <option value="title-desc">Title (Z–A)</option>
+                 <option value="points-asc">Points (low to high)</option>
+                 <option value="points-desc">Points (high to low)</option>
+                 <option value="status">Jira status</option>
+                 <option value="key">Jira key</option>
+               </select>
+               <span class="hint">One-time reorder — drag handles still work afterward.</span>
+             </div>`
+          : ""
+      }
+      ${
         openStories(room).length
           ? `<ul class="story-list">${openStories(room).map((s) => storyRow(s, room, ctx)).join("")}</ul>`
           : `<p class="empty">${
@@ -566,19 +582,47 @@ export function renderAiChat(ctx) {
   return `
     <div class="ai-chat">
       <div class="ai-chat__messages" id="ai-chat-messages">
-        ${
-          chat.messages.length
-            ? chat.messages.map(aiChatBubble).join("")
-            : `<p class="hint">Ask me to do something — e.g. "add all backlog stories for CUMA".</p>`
-        }
+        ${chat.messages.length ? chat.messages.map(aiChatBubble).join("") : `<p class="hint">Ask me to do something.</p>`}
         ${chat.busy ? `<div class="ai-chat__bubble ai-chat__bubble--assistant">✨ Thinking…</div>` : ""}
         ${chat.pendingAction ? aiChatConfirm(chat.pendingAction) : ""}
       </div>
-      <form class="ai-chat__form" id="ai-chat-form" autocomplete="off">
-        <input class="input" id="ai-chat-input" placeholder="Ask AI to do something…"
-               value="${escapeHtml(ctx.aiChatDraft || "")}" ${locked ? "disabled" : ""}>
-        <button class="btn btn--primary" type="submit" ${locked ? "disabled" : ""}>Send</button>
-      </form>
+      <div class="ai-chat__form-wrap">
+        <!-- Shown via :focus-within (see room.css) whenever the input has
+             focus, not just when the chat is empty — a quick way back to a
+             sample regardless of how much history has piled up. -->
+        ${aiChatSamples()}
+        <form class="ai-chat__form" id="ai-chat-form" autocomplete="off">
+          <input class="input" id="ai-chat-input" placeholder="Ask AI to do something…"
+                 value="${escapeHtml(ctx.aiChatDraft || "")}" ${locked ? "disabled" : ""}>
+          <button class="btn btn--primary" type="submit" ${locked ? "disabled" : ""}>Send</button>
+        </form>
+      </div>
+    </div>`;
+}
+
+/**
+ * Short label for the tab-like chip, full sentence for the input it fills —
+ * filled on click, not sent automatically, since a sample usually needs a
+ * word or two changed (which project, which story) before it means what the
+ * person actually wants.
+ */
+const AI_CHAT_SAMPLES = [
+  { label: "Add Customer Management backlog", text: "Add every backlog story for Customer Management." },
+  { label: "Add unestimated CM stories", text: "Add Customer Management stories that don't have story points assigned yet." },
+  { label: "Clear this session's backlog", text: "Remove every story from this session's backlog." },
+];
+
+function aiChatSamples() {
+  return `
+    <div class="ai-chat__suggest">
+      <p class="ai-chat__suggest-label">Try one of these</p>
+      <div class="ai-chat__samples">
+        ${AI_CHAT_SAMPLES.map(
+          ({ label, text }) =>
+            `<button class="ai-chat__sample" type="button" data-act="fill-ai-chat" data-text="${escapeHtml(text)}"
+                     title="${escapeHtml(text)}">${escapeHtml(label)}</button>`
+        ).join("")}
+      </div>
     </div>`;
 }
 

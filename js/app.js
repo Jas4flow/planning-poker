@@ -712,6 +712,19 @@ async function resolveAiChatResult(result) {
     return;
   }
 
+  if (result.action === "remove_all_stories") {
+    const count = room.stories.length;
+    if (!count) {
+      aiChat.messages.push({ role: "assistant", text: "The backlog is already empty." });
+      return;
+    }
+    aiChat.pendingAction = {
+      action: "remove_all_stories",
+      confirm: `Remove all ${count} stor${count === 1 ? "y" : "ies"} from the backlog? This can't be undone.`,
+    };
+    return;
+  }
+
   if (result.action === "change_status") {
     const story = findStoryMatch(room, result.storyQuery);
     if (!story) {
@@ -787,7 +800,10 @@ async function runAiChatAction(pending) {
   if (pending.action === "import_all_backlog") {
     try {
       const config = jira.loadConfig();
-      const issues = await jira.projectBacklog(pending.projectKey, config);
+      const fetched = await jira.projectBacklog(pending.projectKey, config);
+      const issues = pending.onlyMissingPoints
+        ? fetched.filter((i) => i.points === null || i.points === undefined)
+        : fetched;
       const existing = new Set((room.stories || []).map((s) => s.key).filter(Boolean));
       let added = 0;
       for (const issue of issues) {
@@ -801,11 +817,12 @@ async function runAiChatAction(pending) {
         existing.add(issue.key);
         added += 1;
       }
+      const scope = pending.onlyMissingPoints ? "open issues with no story points" : "open issues";
       aiChat.messages.push({
         role: "assistant",
         text: added
           ? `Added ${added} issue${added === 1 ? "" : "s"} from ${pending.projectKey}.`
-          : `Nothing new to add — every open issue in ${pending.projectKey} is already in the backlog.`,
+          : `Nothing new to add — every matching ${scope} in ${pending.projectKey} is already in the backlog.`,
       });
     } catch (error) {
       aiChat.messages.push({ role: "assistant", text: errorText(error) });
@@ -821,6 +838,18 @@ async function runAiChatAction(pending) {
     }
     session.store.dispatch({ type: "DELETE_STORY", id: story.id });
     aiChat.messages.push({ role: "assistant", text: `Removed "${story.title}" from the backlog.` });
+    return;
+  }
+
+  if (pending.action === "remove_all_stories") {
+    // Fresh read, not the snapshot the confirm was built from — someone else
+    // may have added or removed one in the meantime.
+    const current = session.store.getState().stories;
+    for (const story of current) session.store.dispatch({ type: "DELETE_STORY", id: story.id });
+    aiChat.messages.push({
+      role: "assistant",
+      text: current.length ? `Removed all ${current.length} stories from the backlog.` : "The backlog is already empty.",
+    });
     return;
   }
 
@@ -1354,6 +1383,15 @@ const actions = {
     aiChat.messages.push({ role: "assistant", text: "Okay, cancelled." });
     render();
   },
+  "fill-ai-chat": (el) => {
+    // Fills the box rather than sending straight away — a sample often
+    // needs a word or two changed (which project, which story) before it
+    // actually means what the person wants.
+    const input = $("#ai-chat-input");
+    if (!input) return;
+    input.value = el.dataset.text || "";
+    input.focus();
+  },
   "next-story": () => {
     const room = session.store.getState();
     const index = room.stories.findIndex((s) => s.id === room.activeStoryId);
@@ -1623,9 +1661,56 @@ document.addEventListener("change", (event) => {
     case "set-timer-duration":
       store.dispatch({ type: "SET_OPTIONS", timerDuration: Number(target.value) });
       return;
+    case "sort-backlog": {
+      if (!target.value) return;
+      const room = store.getState();
+      const order = sortedBacklogOrder(room, target.value);
+      if (order.length > 1) store.dispatch({ type: "REORDER_STORY", order });
+      render(); // resets the select back to its "Sort by…" placeholder
+      return;
+    }
     default:
   }
 });
+
+/**
+ * A one-time reorder, not a persisted mode — REORDER_STORY only touches the
+ * ids given, so archived stories (not included here) keep their positions
+ * regardless of what the open backlog gets sorted by.
+ */
+function sortedBacklogOrder(room, mode) {
+  const open = room.stories.filter((s) => s.status !== "archived");
+  const numeric = (s) => {
+    const n = Number(s.finalEstimate);
+    return Number.isFinite(n) ? n : null;
+  };
+  const collator = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+
+  const sorted = open.slice().sort((a, b) => {
+    switch (mode) {
+      case "title-asc":
+        return collator(a.title, b.title);
+      case "title-desc":
+        return collator(b.title, a.title);
+      case "points-asc":
+      case "points-desc": {
+        const na = numeric(a);
+        const nb = numeric(b);
+        if (na === null && nb === null) return 0;
+        if (na === null) return 1; // no points sorts last regardless of direction
+        if (nb === null) return -1;
+        return mode === "points-asc" ? na - nb : nb - na;
+      }
+      case "status":
+        return collator(a.jiraStatus || "￿", b.jiraStatus || "￿"); // blank sorts last
+      case "key":
+        return collator(a.key || "￿", b.key || "￿");
+      default:
+        return 0;
+    }
+  });
+  return sorted.map((s) => s.id);
+}
 
 function openCustomDeck() {
   const room = session.store.getState();
