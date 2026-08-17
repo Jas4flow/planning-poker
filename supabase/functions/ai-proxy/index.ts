@@ -31,11 +31,13 @@ const corsHeaders = {
 };
 
 const NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
-// 3.3 supersedes 3.1 at the same 70B size — same cost, meaningfully better
-// instruction-following. A reasoning model (e.g. deepseek-r1) was also
-// considered, but those emit a <think> block before the answer, which would
-// need extra parsing our simple JSON-only prompts don't do.
-const DEFAULT_MODEL = "meta/llama-3.3-70b-instruct";
+// If this turns out to be a reasoning-style model that prepends a <think>
+// block before the actual answer (as deepseek-r1 does), our JSON-only
+// prompts should still parse fine — the {...} extraction regex in ai.js
+// ignores anything before the JSON — but a verbose enough reasoning trace
+// could eat into MAX_TOKENS_CAP before the model reaches the actual answer.
+// Watch for truncated/unparseable responses and raise the cap if so.
+const DEFAULT_MODEL = "deepseek-ai/deepseek-v4-pro";
 // A cost/abuse ceiling — every feature here is a short suggestion or
 // summary, none legitimately need a long completion.
 const MAX_TOKENS_CAP = 700;
