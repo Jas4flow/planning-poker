@@ -19,6 +19,7 @@ import {
   copyText,
   playReveal,
   formatClock,
+  htmlToText,
 } from "./util.js";
 import { createStore, createRoom, activeStory, allVoted, castVotes } from "./store.js";
 import { createSupabaseTransport } from "./transport.js";
@@ -26,6 +27,7 @@ import * as db from "./supabase.js";
 import { deckCards, deckLabel, parseCustomDeck, DECKS } from "./decks.js";
 import { computeStats } from "./stats.js";
 import * as jira from "./jira.js";
+import * as ai from "./ai.js";
 import { createTicker, remainingSeconds, isTimerFinished } from "./timer.js";
 import { downloadCsv, downloadJson } from "./export.js";
 import { renderStage } from "./ui/seats.js";
@@ -43,6 +45,7 @@ import {
   openPickEstimate,
   openUpdatePoints,
   openChangeStatus,
+  openAiCommand,
 } from "./ui/story-modals.js";
 
 const PREFS_KEY = "pp:prefs";
@@ -603,6 +606,21 @@ function loadAssignees(key, storyId, query) {
     });
 }
 
+/*
+ * AI features (ai.js → the ai-proxy Edge Function). Every result here is a
+ * suggestion shown for a person to read and act on — never applied to the
+ * room or written to Jira on its own. Same plain-state approach as the
+ * pickers above: read into ctx, rendered by the relevant panel, nothing for
+ * a periodic render() to fight with.
+ */
+let estimateSuggestion = null; // { storyId, loading, value, reason, error }
+let descSummary = null; // { storyId, loading, text, error }
+let disagreementExplain = null; // { storyId, loading, text, error }
+
+function storyText(story) {
+  return htmlToText(story.description || "");
+}
+
 /* ---------- Overlay ---------- */
 
 function showOverlay(html) {
@@ -643,6 +661,9 @@ function context(room) {
     inviteUrl: session?.meta?.invite_token ? db.inviteUrl(session.meta.invite_token) : "",
     statusPicker,
     assigneePicker,
+    estimateSuggestion,
+    descSummary,
+    disagreementExplain,
   };
 }
 
@@ -713,6 +734,7 @@ function header(room, ctx) {
     </button>
     <button class="btn btn--icon" type="button" data-act="toggle-theme" aria-label="Switch theme" title="Switch theme">◐</button>
     ${ctx.isOwner ? `<button class="btn btn--sm" type="button" data-act="settings">Jira</button>` : ""}
+    ${ctx.isHost ? `<button class="btn btn--sm" type="button" data-act="ask-ai" title="Ask AI to do something">✨ Ask AI</button>` : ""}
     <button class="btn btn--sm btn--ghost" type="button" data-act="leave">Leave</button>`;
 }
 
@@ -785,6 +807,11 @@ const actions = {
     render();
   },
   settings: () => openSettings({ onSaved: () => session && render() }),
+  "ask-ai": () => {
+    const room = session.store.getState();
+    if (room && room.hostId !== me.id) return toast("Only the host can use this.", "warn");
+    openAiCommand({ store: session.store });
+  },
   "go-home": () => {
     location.hash = "#/";
   },
@@ -1002,6 +1029,69 @@ const actions = {
         render();
       });
   },
+  "suggest-estimate": () => {
+    const room = session.store.getState();
+    const story = activeStory(room);
+    if (!story) return;
+    estimateSuggestion = { storyId: story.id, loading: true, value: null, reason: "", error: null };
+    render();
+    ai
+      .suggestEstimate({ title: story.title, description: storyText(story), deckCards: deckCards(room) })
+      .then(({ value, reason }) => {
+        if (estimateSuggestion?.storyId !== story.id) return;
+        estimateSuggestion = { storyId: story.id, loading: false, value, reason, error: null };
+        render();
+      })
+      .catch((error) => {
+        if (estimateSuggestion?.storyId !== story.id) return;
+        estimateSuggestion = { ...estimateSuggestion, loading: false, error: error.message };
+        render();
+      });
+  },
+  "toggle-desc-summary": () => {
+    const room = session.store.getState();
+    const story = activeStory(room);
+    if (!story) return;
+    if (descSummary?.storyId === story.id) {
+      descSummary = null;
+      render();
+      return;
+    }
+    descSummary = { storyId: story.id, loading: true, text: "", error: null };
+    render();
+    ai
+      .summarizeDescription({ title: story.title, descriptionText: storyText(story) })
+      .then((text) => {
+        if (descSummary?.storyId !== story.id) return;
+        descSummary = { storyId: story.id, loading: false, text, error: null };
+        render();
+      })
+      .catch((error) => {
+        if (descSummary?.storyId !== story.id) return;
+        descSummary = { ...descSummary, loading: false, error: error.message };
+        render();
+      });
+  },
+  "explain-disagreement": () => {
+    const room = session.store.getState();
+    const story = activeStory(room);
+    if (!story || !room.revealed) return;
+    const stats = computeStats(castVotes(room), deckCards(room));
+    disagreementExplain = { storyId: story.id, loading: true, text: "", error: null };
+    render();
+    ai
+      .explainDisagreement({ title: story.title, description: storyText(story), distribution: stats.distribution })
+      .then((text) => {
+        if (disagreementExplain?.storyId !== story.id) return;
+        disagreementExplain = { storyId: story.id, loading: false, text, error: null };
+        render();
+      })
+      .catch((error) => {
+        if (disagreementExplain?.storyId !== story.id) return;
+        disagreementExplain = { ...disagreementExplain, loading: false, error: error.message };
+        render();
+      });
+  },
   "next-story": () => {
     const room = session.store.getState();
     const index = room.stories.findIndex((s) => s.id === room.activeStoryId);
@@ -1088,7 +1178,7 @@ const actions = {
       toast("Put a story on the table first.", "warn");
       return;
     }
-    openUpdatePoints({ store: session.store, room, story, me, suggestion: suggestionFor(room) });
+    openUpdatePoints({ store: session.store, room, story, me, suggestion: suggestionFor(room), roundStats: roundStatsFor(room) });
   },
 
   /* room */
@@ -1167,6 +1257,13 @@ function suggestionFor(room) {
   if (!room.revealed) return undefined;
   const stats = computeStats(castVotes(room), deckCards(room));
   return stats.suggestion ?? undefined;
+}
+
+/** Feeds the AI round-summary feature in the update-points modal — undefined until a round is actually revealed. */
+function roundStatsFor(room) {
+  if (!room.revealed) return undefined;
+  const stats = computeStats(castVotes(room), deckCards(room));
+  return { average: stats.average, agreement: stats.agreement, votes: castVotes(room) };
 }
 
 /**

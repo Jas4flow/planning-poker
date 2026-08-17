@@ -88,6 +88,7 @@ function storyNow(story, ctx, room) {
       </div>
       ${assigneeRow(story, ctx)}
       <h2 class="story-now__title">${escapeHtml(story.title)}</h2>
+      ${story.description ? aiDescSummary(story, ctx.descSummary) : ""}
       ${
         story.description
           ? `<div class="story-desc">${story.description}</div>`
@@ -189,6 +190,24 @@ function assigneePickerMenu(story, picker) {
           : ""
       }
       <div class="assignee-picker__results">${rows}</div>
+    </div>`;
+}
+
+/** Collapsed by default — a 2-3 sentence stand-in for a long description, not a replacement for reading it. */
+function aiDescSummary(story, summary) {
+  if (!summary || summary.storyId !== story.id) {
+    return `<button class="btn btn--ghost btn--sm" type="button" data-act="toggle-desc-summary">✨ AI summary</button>`;
+  }
+  if (summary.loading) {
+    return `<p class="hint">✨ Summarizing…</p>`;
+  }
+  if (summary.error) {
+    return `<p class="note note--danger">${escapeHtml(summary.error)}</p>`;
+  }
+  return `
+    <div class="note" style="white-space:pre-line">
+      ✨ ${escapeHtml(summary.text)}
+      <button class="btn btn--ghost btn--sm" type="button" data-act="toggle-desc-summary" style="margin-top:var(--sp-2)">Hide</button>
     </div>`;
 }
 

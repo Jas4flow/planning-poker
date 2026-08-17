@@ -129,6 +129,15 @@ export async function updateStoryPoints(key, value, config) {
   return { key, points: value };
 }
 
+export async function addComment(key, text) {
+  await wait();
+  const issues = db();
+  const found = issues[key];
+  if (!found) throw new JiraError(`Mock Jira has no issue ${key}.`, { status: 404, kind: "not-found" });
+  found.fields.comments = [...(found.fields.comments || []), { text, at: Date.now() }];
+  persist(issues);
+}
+
 /** A small linear workflow, just enough to exercise "only some moves are legal from here". */
 const WORKFLOW = {
   "In Refinement": [{ id: "21", name: "Ready for sprint", toStatus: "To Do" }],

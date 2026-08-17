@@ -541,6 +541,17 @@ export async function updateStoryPoints(key, value, config = loadConfig()) {
   return { key, points: fresh?.fields?.[config.pointsField] ?? null };
 }
 
+/** Post a plain-text comment — used for the AI round-summary feature. */
+export async function addComment(key, text, config = loadConfig()) {
+  if (config.mock) return mock.addComment(key, text);
+
+  await request(`/rest/api/3/issue/${encodeURIComponent(key)}/comment`, {
+    method: "POST",
+    body: { body: { type: "doc", version: 1, content: [{ type: "paragraph", content: [{ type: "text", text }] }] } },
+    config,
+  });
+}
+
 /**
  * Update a Jira issue's summary (heading) and/or description.
  * Used when editing a story and pushing changes back to Jira.

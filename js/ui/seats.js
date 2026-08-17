@@ -125,10 +125,34 @@ function felt(room, ctx, now, stats) {
                </button>`
             : ""
         }
-      </div>`;
+      </div>
+      ${ctx.isHost ? aiEstimateSuggestion(story, ctx.estimateSuggestion) : ""}`;
   }
 
   return `<div class="felt"><div class="felt__inner">${inner}</div></div>`;
+}
+
+/**
+ * A starting-point nudge before the room votes — shown only to whoever asked
+ * for it (this is local UI state, not room state), and never applied to a
+ * card automatically. The reveal/reason wording makes clear it is a
+ * suggestion to weigh, not an answer.
+ */
+function aiEstimateSuggestion(story, suggestion) {
+  if (!suggestion || suggestion.storyId !== story.id) {
+    return `<button class="btn btn--ghost btn--sm" type="button" data-act="suggest-estimate" style="margin-top:var(--sp-2)">✨ AI suggestion</button>`;
+  }
+  if (suggestion.loading) {
+    return `<p class="hint" style="margin-top:var(--sp-2)">✨ Thinking…</p>`;
+  }
+  if (suggestion.error) {
+    return `<p class="note note--danger" style="margin-top:var(--sp-2)">${escapeHtml(suggestion.error)}</p>`;
+  }
+  return `
+    <p class="hint" style="margin-top:var(--sp-2)">
+      ✨ AI suggests <span class="chip chip--brand">${escapeHtml(suggestion.value)}</span>
+      ${suggestion.reason ? ` — ${escapeHtml(suggestion.reason)}` : ""}
+    </p>`;
 }
 
 function summaryLine(stats) {
@@ -170,8 +194,27 @@ function results(room, ctx, stats) {
           .join("")}
       </div>
 
+      ${story && stats.agreement !== null && stats.agreement < 70 ? disagreementBox(story, ctx.disagreementExplain) : ""}
       ${story ? acceptRow(story, stats, ctx) : ""}
     </section>`;
+}
+
+/** Only offered when agreement is actually low — no point asking the AI to explain a round everyone agreed on. */
+function disagreementBox(story, explain) {
+  if (!explain || explain.storyId !== story.id) {
+    return `
+      <div style="text-align:center; margin-bottom:var(--sp-3)">
+        <button class="btn btn--ghost btn--sm" type="button" data-act="explain-disagreement">✨ Why the spread? (AI)</button>
+      </div>`;
+  }
+  if (explain.loading) {
+    return `<p class="hint" style="text-align:center; margin-bottom:var(--sp-3)">✨ Thinking…</p>`;
+  }
+  if (explain.error) {
+    return `<p class="note note--danger" style="margin-bottom:var(--sp-3)">${escapeHtml(explain.error)}</p>`;
+  }
+  return `
+    <div class="note" style="margin-bottom:var(--sp-3); white-space:pre-line">✨ ${escapeHtml(explain.text)}</div>`;
 }
 
 function stat(label, value, accent = false) {

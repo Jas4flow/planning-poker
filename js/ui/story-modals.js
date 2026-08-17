@@ -9,6 +9,7 @@ import { deckCards, cardToNumber } from "../decks.js";
 import { validatePointValue } from "../stats.js";
 import * as jira from "../jira.js";
 import { mockKeys } from "../jira-mock.js";
+import * as ai from "../ai.js";
 
 /* ---------- Add from Jira ---------- */
 
@@ -651,7 +652,7 @@ export function openPickEstimate({ store, room, story, suggestion }) {
 
 /* ---------- Write the estimate back to Jira ---------- */
 
-export function openUpdatePoints({ store, room, story, me, suggestion }) {
+export function openUpdatePoints({ store, room, story, me, suggestion, roundStats }) {
   const config = jira.loadConfig();
   const cards = deckCards(room);
   const numericCards = cards.filter((card) => cardToNumber(card) !== null);
@@ -704,6 +705,27 @@ export function openUpdatePoints({ store, room, story, me, suggestion }) {
       </div>
 
       ${
+        roundStats
+          ? `<div class="field">
+               <div class="row row--tight" style="align-items:center">
+                 <label style="margin:0">AI round summary</label>
+                 <div class="spacer"></div>
+                 <button class="btn btn--sm btn--ghost" type="button" data-generate-summary>✨ Generate</button>
+               </div>
+               <textarea class="textarea" id="round-summary" rows="3"
+                 placeholder="Generate a short summary of this round to optionally post as a Jira comment…"></textarea>
+               ${
+                 story.key
+                   ? `<label class="check"><input type="checkbox" id="post-comment"> Also post this as a comment on ${escapeHtml(
+                       story.key
+                     )}</label>`
+                   : `<span class="hint">Link this story to a Jira issue first to post it as a comment.</span>`
+               }
+             </div>`
+          : ""
+      }
+
+      ${
         jira.configProblem(config)
           ? `<p class="note note--warn">${escapeHtml(jira.configProblem(config))} Open Settings first.</p>`
           : ""
@@ -729,8 +751,33 @@ export function openUpdatePoints({ store, room, story, me, suggestion }) {
   });
 
   handle.footer.querySelector("[data-settings]").addEventListener("click", () =>
-    openSettings({ onSaved: () => openUpdatePoints({ store, room, story, me, suggestion }) })
+    openSettings({ onSaved: () => openUpdatePoints({ store, room, story, me, suggestion, roundStats }) })
   );
+
+  const generateButton = handle.body.querySelector("[data-generate-summary]");
+  if (generateButton) {
+    generateButton.addEventListener("click", async () => {
+      generateButton.disabled = true;
+      generateButton.textContent = "Thinking…";
+      try {
+        const text = await ai.summarizeRound({
+          title: story.title,
+          points: valueInput.value || story.finalEstimate || "—",
+          average: roundStats.average,
+          agreement: roundStats.agreement,
+          votes: roundStats.votes,
+        });
+        handle.body.querySelector("#round-summary").value = text;
+        const commentBox = handle.body.querySelector("#post-comment");
+        if (commentBox) commentBox.checked = true;
+      } catch (error) {
+        handle.message(errorText(error), "danger");
+      } finally {
+        generateButton.disabled = false;
+        generateButton.textContent = "✨ Generate";
+      }
+    });
+  }
 
   const update = async () => {
     handle.clearMessage();
@@ -765,6 +812,20 @@ export function openUpdatePoints({ store, room, story, me, suggestion }) {
       });
 
       toast(`${key} now has ${stored} story point${Number(stored) === 1 ? "" : "s"} in Jira.`, "ok");
+
+      // Best-effort and separate from the point update above: a failed
+      // comment should not make it look like the (already successful) point
+      // write failed too.
+      const commentBox = handle.body.querySelector("#post-comment");
+      const summaryText = handle.body.querySelector("#round-summary")?.value.trim();
+      if (commentBox?.checked && summaryText) {
+        try {
+          await jira.addComment(key, summaryText);
+        } catch (error) {
+          toast(`Points saved, but the comment could not be posted: ${errorText(error)}`, "warn");
+        }
+      }
+
       closeModal();
     } catch (error) {
       handle.message(errorText(error), "danger");
@@ -875,4 +936,96 @@ function offerLocalSave(handle, store, story, value) {
     closeModal();
   });
   handle.footer.insertBefore(button, handle.footer.querySelector("[data-update]"));
+}
+
+/* ---------- Ask AI (natural-language command bar) ---------- */
+
+/**
+ * Deliberately narrow: the model only ever picks from a small fixed action
+ * set (ai.js) and the app performs the actual work itself after a person
+ * explicitly confirms — the model never touches room or Jira state directly.
+ */
+export function openAiCommand({ store }) {
+  const handle = openModal({
+    title: "Ask AI",
+    body: `
+      <div class="field">
+        <label for="ai-command-text">What do you want to do?</label>
+        <textarea class="textarea" id="ai-command-text" rows="2" autofocus
+          placeholder='e.g. "add all backlog stories for CUMA"'></textarea>
+      </div>
+      <p class="hint">Supported so far: importing every open issue from a project's backlog. More is on the way.</p>`,
+    footer: `
+      <button class="btn" type="button" data-modal-close>Cancel</button>
+      <button class="btn btn--primary" type="button" data-ask>Ask</button>`,
+  });
+
+  const input = handle.body.querySelector("#ai-command-text");
+  const askButton = handle.footer.querySelector("[data-ask]");
+
+  const run = async () => {
+    const text = input.value.trim();
+    if (!text) return;
+    handle.clearMessage();
+    askButton.disabled = true;
+    askButton.textContent = "Thinking…";
+    try {
+      const projects = await jira.listProjects();
+      const remembered = rememberedProjectKeys().filter((key) => projects.some((p) => p.key === key));
+      const result = await ai.interpretCommand(text, { projects, defaultProjectKey: remembered[0] });
+
+      if (result.action === "unsupported") {
+        handle.message(result.message, "warn");
+        return;
+      }
+
+      // import_all_backlog is the only supported action right now — the app
+      // decides the actual mechanics below; the model only chose which
+      // action and which project.
+      const yes = await confirmDialog({ title: "Confirm", message: result.confirm, confirmLabel: "Do it" });
+      if (yes) await runImportAllBacklog(store, result.projectKey);
+    } catch (error) {
+      handle.message(errorText(error), "danger");
+    } finally {
+      askButton.disabled = false;
+      askButton.textContent = "Ask";
+    }
+  };
+
+  askButton.addEventListener("click", run);
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      run();
+    }
+  });
+
+  return handle;
+}
+
+async function runImportAllBacklog(store, projectKey) {
+  toast(`Fetching ${projectKey}'s backlog…`, "info");
+  try {
+    const config = jira.loadConfig();
+    const issues = await jira.projectBacklog(projectKey, config);
+    const existing = new Set((store.getState()?.stories || []).map((s) => s.key).filter(Boolean));
+    let added = 0;
+    for (const issue of issues) {
+      if (existing.has(issue.key)) continue;
+      const story = createStory({ title: issue.title, description: issue.description, key: issue.key, url: issue.url });
+      story.jiraPoints = issue.points;
+      story.jiraStatus = issue.status || null;
+      story.jiraAssignee = issue.assignee || null;
+      story.jiraAssigneeId = issue.assigneeId || null;
+      store.dispatch({ type: "ADD_STORY", story });
+      existing.add(issue.key);
+      added += 1;
+    }
+    toast(
+      added ? `Added ${added} issue${added === 1 ? "" : "s"} from ${projectKey}.` : `Nothing new to add from ${projectKey}.`,
+      added ? "ok" : "warn"
+    );
+  } catch (error) {
+    toast(errorText(error), "error");
+  }
 }
