@@ -87,8 +87,11 @@ function storyNow(story, ctx, room) {
         }
       </div>
       ${assigneeRow(story, ctx)}
-      <h2 class="story-now__title">${escapeHtml(story.title)}</h2>
-      ${story.description ? aiDescSummary(story, ctx.descSummary) : ""}
+      <div class="story-now__title-row">
+        <h2 class="story-now__title">${escapeHtml(story.title)}</h2>
+        ${story.description ? aiDescSummaryTrigger(ctx.descSummary?.storyId === story.id) : ""}
+      </div>
+      ${story.description && ctx.descSummary?.storyId === story.id ? aiDescSummaryContent(ctx.descSummary) : ""}
       ${
         story.description
           ? `<div class="story-desc">${story.description}</div>`
@@ -193,22 +196,22 @@ function assigneePickerMenu(story, picker) {
     </div>`;
 }
 
+/** Sits beside the title — a button when collapsed, a "Hide" toggle once the summary (below) is showing. */
+function aiDescSummaryTrigger(isOpen) {
+  return `<button class="btn btn--ghost btn--sm" type="button" data-act="toggle-desc-summary">${
+    isOpen ? "Hide AI summary" : "✨ AI summary"
+  }</button>`;
+}
+
 /** Collapsed by default — a 2-3 sentence stand-in for a long description, not a replacement for reading it. */
-function aiDescSummary(story, summary) {
-  if (!summary || summary.storyId !== story.id) {
-    return `<button class="btn btn--ghost btn--sm" type="button" data-act="toggle-desc-summary">✨ AI summary</button>`;
-  }
+function aiDescSummaryContent(summary) {
   if (summary.loading) {
     return `<p class="hint">✨ Summarizing…</p>`;
   }
   if (summary.error) {
     return `<p class="note note--danger">${escapeHtml(summary.error)}</p>`;
   }
-  return `
-    <div class="note" style="white-space:pre-line">
-      ✨ ${escapeHtml(summary.text)}
-      <button class="btn btn--ghost btn--sm" type="button" data-act="toggle-desc-summary" style="margin-top:var(--sp-2)">Hide</button>
-    </div>`;
+  return `<div class="note" style="white-space:pre-line">✨ ${escapeHtml(summary.text)}</div>`;
 }
 
 /**

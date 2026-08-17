@@ -768,7 +768,20 @@ body.is-resizing {
   color: #7fd0ea;
 }
 
+.story-now__title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.story-now__title-row > .btn {
+  flex-shrink: 0;
+}
+
 .story-now__title {
+  flex: 1;
+  min-width: 0;
   font-size: var(--fs-md);
   overflow-wrap: anywhere;
 }
