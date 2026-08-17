@@ -88,6 +88,7 @@ export function openAddStoryFromJira({ store, activate = true }) {
           story.jiraStatus = issue.status || null;
           story.jiraAssignee = issue.assignee || null;
           story.jiraAssigneeId = issue.assigneeId || null;
+          story.jiraPriority = issue.priority || null;
           if (issue.points !== null && issue.points !== undefined) {
             story.finalEstimate = String(issue.points);
           }
@@ -495,6 +496,7 @@ export function openImportFromBacklog({ store, activate = false }) {
       story.jiraStatus = issue.status || null;
       story.jiraAssignee = issue.assignee || null;
       story.jiraAssigneeId = issue.assigneeId || null;
+      story.jiraPriority = issue.priority || null;
       store.dispatch({ type: "ADD_STORY", story });
       existing.add(key);
       if (!firstAdded) firstAdded = story;
@@ -589,6 +591,7 @@ export function openJqlImport({ store }) {
         story.jiraStatus = issue.status || null;
         story.jiraAssignee = issue.assignee || null;
         story.jiraAssigneeId = issue.assigneeId || null;
+        story.jiraPriority = issue.priority || null;
         store.dispatch({ type: "ADD_STORY", story });
         existing.add(issue.key);
         added += 1;

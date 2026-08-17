@@ -566,6 +566,9 @@ let statusPicker = null; // { storyId, loading, applying, transitions, error }
 let assigneePicker = null; // { storyId, query, loading, applying, results, error }
 let assigneeSearchTimer = null;
 
+/** The backlog sort icon's dropdown — a one-shot menu, not tied to any particular story. */
+let sortMenuOpen = false;
+
 document.addEventListener("click", (event) => {
   if (statusPicker && !event.target.closest(".status-picker")) {
     statusPicker = null;
@@ -573,6 +576,10 @@ document.addEventListener("click", (event) => {
   }
   if (assigneePicker && !event.target.closest(".assignee-picker")) {
     assigneePicker = null;
+    render();
+  }
+  if (sortMenuOpen && !event.target.closest(".sort-menu")) {
+    sortMenuOpen = false;
     render();
   }
 });
@@ -725,6 +732,19 @@ async function resolveAiChatResult(result) {
     return;
   }
 
+  if (result.action === "sort_backlog") {
+    if (room.stories.filter((s) => s.status !== "archived").length < 2) {
+      aiChat.messages.push({ role: "assistant", text: "Not enough stories in the backlog to sort." });
+      return;
+    }
+    aiChat.pendingAction = {
+      action: "sort_backlog",
+      sortBy: result.sortBy,
+      confirm: `Sort the backlog by ${SORT_LABELS[result.sortBy] || result.sortBy}?`,
+    };
+    return;
+  }
+
   if (result.action === "change_status") {
     const story = findStoryMatch(room, result.storyQuery);
     if (!story) {
@@ -853,6 +873,13 @@ async function runAiChatAction(pending) {
     return;
   }
 
+  if (pending.action === "sort_backlog") {
+    const order = sortedBacklogOrder(session.store.getState(), pending.sortBy);
+    if (order.length > 1) session.store.dispatch({ type: "REORDER_STORY", order });
+    aiChat.messages.push({ role: "assistant", text: `Sorted the backlog by ${SORT_LABELS[pending.sortBy] || pending.sortBy}.` });
+    return;
+  }
+
   if (pending.action === "change_status") {
     try {
       const landedOn = await jira.applyTransition(pending.storyKey, pending.transitionId);
@@ -930,6 +957,7 @@ function context(room) {
     descSummary,
     disagreementExplain,
     aiChat,
+    sortMenuOpen,
   };
 }
 
@@ -1392,6 +1420,17 @@ const actions = {
     input.value = el.dataset.text || "";
     input.focus();
   },
+  "toggle-sort-menu": () => {
+    sortMenuOpen = !sortMenuOpen;
+    render();
+  },
+  "sort-backlog": (el) => {
+    const room = session.store.getState();
+    const order = sortedBacklogOrder(room, el.dataset.sort);
+    if (order.length > 1) session.store.dispatch({ type: "REORDER_STORY", order });
+    sortMenuOpen = false;
+    render();
+  },
   "next-story": () => {
     const room = session.store.getState();
     const index = room.stories.findIndex((s) => s.id === room.activeStoryId);
@@ -1661,14 +1700,6 @@ document.addEventListener("change", (event) => {
     case "set-timer-duration":
       store.dispatch({ type: "SET_OPTIONS", timerDuration: Number(target.value) });
       return;
-    case "sort-backlog": {
-      if (!target.value) return;
-      const room = store.getState();
-      const order = sortedBacklogOrder(room, target.value);
-      if (order.length > 1) store.dispatch({ type: "REORDER_STORY", order });
-      render(); // resets the select back to its "Sort by…" placeholder
-      return;
-    }
     default:
   }
 });
@@ -1705,12 +1736,31 @@ function sortedBacklogOrder(room, mode) {
         return collator(a.jiraStatus || "￿", b.jiraStatus || "￿"); // blank sorts last
       case "key":
         return collator(a.key || "￿", b.key || "￿");
+      case "priority": {
+        const rank = (s) => PRIORITY_RANK[s.jiraPriority] ?? 99; // unranked priorities sort after known ones
+        return rank(a) - rank(b);
+      }
       default:
         return 0;
     }
   });
   return sorted.map((s) => s.id);
 }
+
+// Jira's own default priority scheme — anything else (a custom priority
+// scheme) sorts after these via the ?? 99 fallback above, not interleaved.
+const PRIORITY_RANK = { Highest: 1, High: 2, Medium: 3, Low: 4, Lowest: 5 };
+
+// Matches side.js's SORT_OPTIONS labels — used for the Ask AI confirm bubble.
+const SORT_LABELS = {
+  "title-asc": "title (A–Z)",
+  "title-desc": "title (Z–A)",
+  "points-asc": "points (low to high)",
+  "points-desc": "points (high to low)",
+  priority: "priority (highest first)",
+  status: "Jira status",
+  key: "Jira key",
+};
 
 function openCustomDeck() {
   const room = session.store.getState();

@@ -23,23 +23,8 @@ export function renderStoryPanel(room, ctx) {
         }
         <div class="spacer"></div>
         <span class="chip chip--teal">${estimatedTotal(room)} pts</span>
+        ${openStories(room).length > 1 ? sortMenuTrigger(ctx) : ""}
       </div>
-      ${
-        openStories(room).length > 1
-          ? `<div class="row row--tight" style="margin-bottom:var(--sp-2)">
-               <select class="select" data-act="sort-backlog" aria-label="Sort the backlog" style="width:auto">
-                 <option value="">Sort by…</option>
-                 <option value="title-asc">Title (A–Z)</option>
-                 <option value="title-desc">Title (Z–A)</option>
-                 <option value="points-asc">Points (low to high)</option>
-                 <option value="points-desc">Points (high to low)</option>
-                 <option value="status">Jira status</option>
-                 <option value="key">Jira key</option>
-               </select>
-               <span class="hint">One-time reorder — drag handles still work afterward.</span>
-             </div>`
-          : ""
-      }
       ${
         openStories(room).length
           ? `<ul class="story-list">${openStories(room).map((s) => storyRow(s, room, ctx)).join("")}</ul>`
@@ -294,16 +279,56 @@ function storyRow(story, room, ctx) {
                </button>`
             : ""
         }
-        <span class="${
-          story.finalEstimate === null || story.finalEstimate === undefined ? "points points--pending" : "points"
-        }">${
-    story.finalEstimate === null || story.finalEstimate === undefined ? "–" : escapeHtml(story.finalEstimate)
-  }</span>
+        ${
+          ctx?.isOwner
+            ? `<button type="button" class="points points--btn${
+                story.finalEstimate === null || story.finalEstimate === undefined ? " points--pending" : ""
+              }" data-act="update-points-history" data-id="${story.id}" title="Update story point">${
+                story.finalEstimate === null || story.finalEstimate === undefined ? "–" : escapeHtml(story.finalEstimate)
+              }</button>`
+            : `<span class="${
+                story.finalEstimate === null || story.finalEstimate === undefined ? "points points--pending" : "points"
+              }">${
+                story.finalEstimate === null || story.finalEstimate === undefined ? "–" : escapeHtml(story.finalEstimate)
+              }</span>`
+        }
         <button type="button" data-act="move-story" data-id="${story.id}" data-direction="up" aria-label="Move up" title="Move up">↑</button>
         <button type="button" data-act="move-story" data-id="${story.id}" data-direction="down" aria-label="Move down" title="Move down">↓</button>
         <button type="button" data-act="delete-story" data-id="${story.id}" aria-label="Remove" title="Remove">×</button>
       </div>
     </li>`;
+}
+
+const SORT_OPTIONS = [
+  ["title-asc", "Title (A–Z)"],
+  ["title-desc", "Title (Z–A)"],
+  ["points-asc", "Points (low to high)"],
+  ["points-desc", "Points (high to low)"],
+  ["priority", "Priority (highest first)"],
+  ["status", "Jira status"],
+  ["key", "Jira key"],
+];
+
+/** An icon rather than a standing dropdown — sorting is a one-time reorder, not a persistent mode worth taking up a whole row for. */
+function sortMenuTrigger(ctx) {
+  return `
+    <div class="sort-menu">
+      <button class="btn btn--icon btn--sm" type="button" data-act="toggle-sort-menu"
+              aria-expanded="${Boolean(ctx.sortMenuOpen)}" title="Sort backlog">⇅</button>
+      ${ctx.sortMenuOpen ? sortMenuOptions() : ""}
+    </div>`;
+}
+
+function sortMenuOptions() {
+  return `
+    <div class="status-picker__menu sort-menu__menu" role="menu">
+      ${SORT_OPTIONS.map(
+        ([value, label]) =>
+          `<button class="status-picker__option" type="button" role="menuitem" data-act="sort-backlog" data-sort="${value}">
+             <span>${escapeHtml(label)}</span>
+           </button>`
+      ).join("")}
+    </div>`;
 }
 
 /** Stories still up for estimation. Synced ones move out to the history. */

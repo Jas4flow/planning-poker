@@ -36,6 +36,9 @@ const SYSTEM_ESTIMATE =
   "single closest card from the deck list provided — never invent a value outside it. " +
   "If past estimated stories are given, calibrate against them — a guess grounded in this team's own past sizing " +
   "beats one from general judgement alone, so lean on the closest comparable rather than picking in a vacuum. " +
+  "If the work is the kind an AI coding assistant (Claude Code, GitHub Copilot, an MCP-connected tool, etc.) " +
+  "would speed up a lot — boilerplate, a well-defined small code change, generating tests, simple refactors — " +
+  "size it lower than you would for a person doing it unaided, and say so in one short clause in the reason. " +
   "No prose outside the JSON.";
 
 /**
@@ -130,7 +133,12 @@ const SUPPORTED_ACTIONS = [
   "remove_all_stories",
   "change_status",
   "change_assignee",
+  "sort_backlog",
 ];
+
+// Same options as the sort icon's own dropdown (side.js SORT_OPTIONS) — kept
+// in sync by hand since one lives in the prompt and the other in markup.
+const SORT_MODES = ["title-asc", "title-desc", "points-asc", "points-desc", "priority", "status", "key"];
 
 const SYSTEM_COMMAND = `You turn one sentence into exactly one app action, or say it isn't supported yet.
 Reply with ONLY a compact JSON object, no prose outside it.
@@ -149,6 +157,9 @@ Supported actions:
   Args: { "storyQuery": "<same as remove_story>", "statusName": "<the plain status name they asked for, e.g. \"Done\", \"In Progress\" — not a transition button label>" }.
 - "change_assignee": assign one story to someone in Jira.
   Args: { "storyQuery": "<same as remove_story>", "personName": "<the name they said, as said>" }.
+- "sort_backlog": reorder the whole backlog by one property.
+  Args: { "sortBy": one of "title-asc", "title-desc", "points-asc", "points-desc", "priority", "status", "key" }.
+  Map their wording to the closest of these (e.g. "by priority" -> "priority", "highest points first" -> "points-desc", "alphabetically" -> "title-asc").
 For remove_story/change_status/change_assignee, only use a storyQuery that actually appears in the backlog list given below — never invent or guess one.
 
 For a supported action, reply: {"action": "<name>", "args": {...}, "confirm": "<one short yes/no question describing exactly what will happen>"}
@@ -212,6 +223,13 @@ export async function interpretCommand(text, { projects, defaultProjectKey, stor
   }
   if (parsed.action === "remove_all_stories") {
     return { action: "remove_all_stories" };
+  }
+  if (parsed.action === "sort_backlog") {
+    const sortBy = String(parsed.args?.sortBy || "");
+    if (!SORT_MODES.includes(sortBy)) {
+      return { action: "unsupported", message: "Sort by what — title, points, priority, status, or key?" };
+    }
+    return { action: "sort_backlog", sortBy };
   }
   if (parsed.action === "change_status") {
     const storyQuery = String(parsed.args?.storyQuery || "").trim();

@@ -239,7 +239,14 @@
   width: min(620px, 100%);
   min-height: 190px;
   padding: var(--sp-5);
-  border-radius: 130px;
+  /* Was a fixed 130px, sized for the original one-line prompt/timer text.
+     Content here can now run to two+ lines (the AI suggestion's reason), and
+     that much rounding on a taller box leaves the background not reaching
+     the corners — text wrapping into one ends up sitting on the plain page
+     behind it, in the page's own dark text color, instead of on the felt's
+     background in its light one. Capped relative to height so it stays
+     pill-shaped for short content without doing that on tall content. */
+  border-radius: min(130px, 22%);
   border: 1px solid var(--felt-line);
   background: var(--felt-bg);
   color: var(--felt-text);
@@ -792,6 +799,14 @@ body.is-resizing {
   position: relative; /* anchors the dropdown */
 }
 
+.sort-menu {
+  position: relative; /* anchors .sort-menu__menu */
+}
+
+.sort-menu__menu {
+  min-width: 200px;
+}
+
 .status-picker__menu {
   position: absolute;
   top: calc(100% + var(--sp-2));
@@ -1156,10 +1171,18 @@ body.is-resizing {
    "Update story point" shortcut) — reset the <button> defaults so it still
    reads as the same pill, not a button. */
 .points--btn {
+  /* A <button> keeps its platform's own background rendering on top of
+     whatever `background` we set unless appearance is turned off — without
+     this, .points/.points--pending's background only became visible via the
+     browser's own native hover highlight, not consistently. */
+  appearance: none;
+  -webkit-appearance: none;
   border: 0;
+  margin: 0;
   font: inherit;
   font-weight: 700;
   cursor: pointer;
+  flex-shrink: 0;
   transition: filter 0.15s var(--ease);
 }
 
