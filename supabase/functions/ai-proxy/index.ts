@@ -21,7 +21,12 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept, apikey",
+  // supabase-js's functions.invoke() attaches its own headers (x-client-info
+  // and friends) beyond the ones a plain fetch call sends. Naming them one
+  // by one broke as soon as the SDK added another; there's no session
+  // cookie here to protect (verify_jwt is what actually gates this
+  // function), so a wildcard is both simpler and correct.
+  "Access-Control-Allow-Headers": "*",
   "Access-Control-Max-Age": "86400",
 };
 
