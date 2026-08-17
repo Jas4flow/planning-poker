@@ -143,13 +143,13 @@ function aiEstimateSuggestion(story, suggestion) {
     return `<button class="btn btn--ghost btn--sm" type="button" data-act="suggest-estimate" style="margin-top:var(--sp-2)">✨ AI suggestion</button>`;
   }
   if (suggestion.loading) {
-    return `<p class="hint" style="margin-top:var(--sp-2)">✨ Thinking…</p>`;
+    return `<p class="felt__sub" style="margin-top:var(--sp-2)">✨ Thinking…</p>`;
   }
   if (suggestion.error) {
-    return `<p class="note note--danger" style="margin-top:var(--sp-2)">${escapeHtml(suggestion.error)}</p>`;
+    return `<p class="felt__sub felt__ai-error" style="margin-top:var(--sp-2)">${escapeHtml(suggestion.error)}</p>`;
   }
   return `
-    <p class="hint" style="margin-top:var(--sp-2)">
+    <p class="felt__sub" style="margin-top:var(--sp-2)">
       ✨ AI suggests <span class="chip chip--brand">${escapeHtml(suggestion.value)}</span>
       ${suggestion.reason ? ` — ${escapeHtml(suggestion.reason)}` : ""}
     </p>`;

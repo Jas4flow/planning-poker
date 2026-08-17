@@ -265,6 +265,14 @@
   color: rgba(255, 255, 255, 0.7);
 }
 
+/* .felt's background is always the same dark teal regardless of the page's
+   light/dark theme, so an error here needs its own fixed-for-dark color
+   rather than the theme-variable --danger (which is a dark red meant for a
+   light surface, and would be nearly invisible here in light mode). */
+.felt__ai-error {
+  color: #ff8a80;
+}
+
 .felt .btn {
   --btn-line: rgba(255, 255, 255, 0.5);
   --btn-fg: #fff;
