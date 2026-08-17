@@ -124,7 +124,7 @@ export async function summarizeRound({ title, points, average, agreement, votes 
  * Add a new supported action here as its own case, not by loosening this
  * into "do anything the model says".
  */
-const SUPPORTED_ACTIONS = ["import_all_backlog"];
+const SUPPORTED_ACTIONS = ["import_all_backlog", "remove_story", "change_status", "change_assignee"];
 
 const SYSTEM_COMMAND = `You turn one sentence into exactly one app action, or say it isn't supported yet.
 Reply with ONLY a compact JSON object, no prose outside it.
@@ -135,22 +135,35 @@ Supported actions:
   If the sentence names a project key or a name matching one of the known projects, use it.
   If it names none and exactly one project is given as the default, use that default.
   If it names none and there is no default, respond unsupported and ask which project.
+- "remove_story": remove one story from the room's current backlog (below).
+  Args: { "storyQuery": "<copied EXACTLY from the backlog list below — its key or its title, verbatim, do not paraphrase or shorten it>" }.
+- "change_status": move one story to a different Jira status.
+  Args: { "storyQuery": "<same as above>", "statusName": "<the plain status name they asked for, e.g. \"Done\", \"In Progress\" — not a transition button label>" }.
+- "change_assignee": assign one story to someone in Jira.
+  Args: { "storyQuery": "<same as above>", "personName": "<the name they said, as said>" }.
+For remove_story/change_status/change_assignee, only use a storyQuery that actually appears in the backlog list given below — never invent or guess one.
 
-For a supported action, reply: {"action": "import_all_backlog", "args": {"projectKey": "..."}, "confirm": "<one short yes/no question describing exactly what will happen, naming the project>"}
-For anything else (including a request that doesn't map to a supported action, or is missing required info): {"action": "unsupported", "message": "<one short sentence explaining what's missing or that this isn't supported yet>"}`;
+For a supported action, reply: {"action": "<name>", "args": {...}, "confirm": "<one short yes/no question describing exactly what will happen>"}
+For anything else (including a request that doesn't map to a supported action, names a story not in the given backlog, or is missing required info): {"action": "unsupported", "message": "<one short sentence explaining what's missing or that this isn't supported yet>"}`;
 
 /**
  * @param {string} text - what the person typed
- * @param {{projects: {key:string,name:string}[], defaultProjectKey?: string, history?: {role:string, content:string}[]}} context
+ * @param {{projects: {key:string,name:string}[], defaultProjectKey?: string, stories?: {key:string,title:string}[], history?: {role:string, content:string}[]}} context
  *   `history` is prior chat turns (plain {role, content} pairs, oldest first)
  *   so a follow-up like "CUMA" after the AI asked "which project?" resolves
- *   using the earlier turn instead of being judged on its own.
+ *   using the earlier turn instead of being judged on its own. `stories` is
+ *   the room's current backlog, so the model can only ever name a story that
+ *   is actually there — the app still re-resolves storyQuery itself rather
+ *   than trusting this, since the model can hallucinate a plausible-looking
+ *   one anyway.
  */
-export async function interpretCommand(text, { projects, defaultProjectKey, history = [] }) {
+export async function interpretCommand(text, { projects, defaultProjectKey, stories = [], history = [] }) {
   const known = projects.map((p) => `${p.key} (${p.name})`).join(", ") || "(none)";
+  const backlog = stories.map((s) => (s.key ? `${s.key}: ${s.title}` : s.title)).join("\n") || "(empty)";
   const prompt =
     `Known projects: ${known}\n` +
     `Default project if none is named: ${defaultProjectKey || "(none)"}\n\n` +
+    `Current backlog stories:\n${backlog}\n\n` +
     `Sentence: "${text}"`;
   const raw = await ask([
     { role: "system", content: SYSTEM_COMMAND },
@@ -172,6 +185,23 @@ export async function interpretCommand(text, { projects, defaultProjectKey, hist
       return { action: "unsupported", message: "Which project? Name one, e.g. \"add all backlog stories for CUMA\"." };
     }
     return { action: "import_all_backlog", projectKey, confirm: String(parsed.confirm || `Add every open issue in ${projectKey}?`) };
+  }
+  if (parsed.action === "remove_story") {
+    const storyQuery = String(parsed.args?.storyQuery || "").trim();
+    if (!storyQuery) return { action: "unsupported", message: "Which story? Name its title or key." };
+    return { action: "remove_story", storyQuery };
+  }
+  if (parsed.action === "change_status") {
+    const storyQuery = String(parsed.args?.storyQuery || "").trim();
+    const statusName = String(parsed.args?.statusName || "").trim();
+    if (!storyQuery || !statusName) return { action: "unsupported", message: "Which story, and which status?" };
+    return { action: "change_status", storyQuery, statusName };
+  }
+  if (parsed.action === "change_assignee") {
+    const storyQuery = String(parsed.args?.storyQuery || "").trim();
+    const personName = String(parsed.args?.personName || "").trim();
+    if (!storyQuery || !personName) return { action: "unsupported", message: "Which story, and assign to whom?" };
+    return { action: "change_assignee", storyQuery, personName };
   }
   return { action: "unsupported", message: "That isn't supported yet." };
 }

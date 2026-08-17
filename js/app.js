@@ -638,20 +638,36 @@ function pastEstimatesFor(room, excludeId) {
  */
 let aiChat = { messages: [], busy: false, pendingAction: null };
 
+/**
+ * Resolve the model's storyQuery against the room's ACTUAL backlog — the
+ * model is told to only ever copy a key/title verbatim from the list it was
+ * given, but nothing stops it hallucinating a plausible one anyway, so this
+ * is the real check, not the prompt instruction. Ambiguous (matches more
+ * than one story) counts as not found — better to ask again than guess.
+ */
+function findStoryMatch(room, query) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return null;
+  const byKey = room.stories.find((s) => s.key && s.key.toLowerCase() === q);
+  if (byKey) return byKey;
+  const byExactTitle = room.stories.find((s) => s.title.toLowerCase() === q);
+  if (byExactTitle) return byExactTitle;
+  const partial = room.stories.filter((s) => s.title.toLowerCase().includes(q) || q.includes(s.title.toLowerCase()));
+  return partial.length === 1 ? partial[0] : null;
+}
+
 async function sendAiChatMessage(text) {
   aiChat.messages.push({ role: "user", text });
   aiChat.busy = true;
   render();
   try {
+    const room = session.store.getState();
     const projects = await jira.listProjects();
     const remembered = (readJson("pp:jira-last-projects", []) || []).filter((key) => projects.some((p) => p.key === key));
     const history = aiChat.messages.slice(0, -1).map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text }));
-    const result = await ai.interpretCommand(text, { projects, defaultProjectKey: remembered[0], history });
-    if (result.action === "unsupported") {
-      aiChat.messages.push({ role: "assistant", text: result.message });
-    } else {
-      aiChat.pendingAction = result; // rendered as a confirm bubble — see aiChatConfirm in side.js
-    }
+    const stories = room.stories.map((s) => ({ key: s.key, title: s.title }));
+    const result = await ai.interpretCommand(text, { projects, defaultProjectKey: remembered[0], stories, history });
+    await resolveAiChatResult(result);
   } catch (error) {
     aiChat.messages.push({ role: "assistant", text: errorText(error) });
   } finally {
@@ -660,37 +676,185 @@ async function sendAiChatMessage(text) {
   }
 }
 
-/** The one supported action today. Add a new `case` here to match a new entry in ai.js's SUPPORTED_ACTIONS. */
-async function runAiChatAction(pending) {
-  if (pending.action !== "import_all_backlog") {
-    aiChat.messages.push({ role: "assistant", text: "That action isn't wired up yet." });
+/**
+ * Turns the model's proposed action into a confirm bubble — but only once
+ * it has been checked against the real room/Jira state (the story actually
+ * exists, the status is actually reachable from where the issue is now, the
+ * person is actually assignable) — never from the model's say-so alone.
+ * Anything that fails to resolve becomes a plain chat message explaining
+ * why, with no confirm bubble, rather than a confirm for something that
+ * would just fail anyway.
+ */
+async function resolveAiChatResult(result) {
+  const room = session.store.getState();
+
+  if (result.action === "unsupported") {
+    aiChat.messages.push({ role: "assistant", text: result.message });
     return;
   }
-  try {
-    const config = jira.loadConfig();
-    const issues = await jira.projectBacklog(pending.projectKey, config);
-    const existing = new Set((session.store.getState()?.stories || []).map((s) => s.key).filter(Boolean));
-    let added = 0;
-    for (const issue of issues) {
-      if (existing.has(issue.key)) continue;
-      const story = createStory({ title: issue.title, description: issue.description, key: issue.key, url: issue.url });
-      story.jiraPoints = issue.points;
-      story.jiraStatus = issue.status || null;
-      story.jiraAssignee = issue.assignee || null;
-      story.jiraAssigneeId = issue.assigneeId || null;
-      session.store.dispatch({ type: "ADD_STORY", story });
-      existing.add(issue.key);
-      added += 1;
-    }
-    aiChat.messages.push({
-      role: "assistant",
-      text: added
-        ? `Added ${added} issue${added === 1 ? "" : "s"} from ${pending.projectKey}.`
-        : `Nothing new to add — every open issue in ${pending.projectKey} is already in the backlog.`,
-    });
-  } catch (error) {
-    aiChat.messages.push({ role: "assistant", text: errorText(error) });
+
+  if (result.action === "import_all_backlog") {
+    aiChat.pendingAction = result; // already fully resolved by ai.js (a real, known project)
+    return;
   }
+
+  if (result.action === "remove_story") {
+    const story = findStoryMatch(room, result.storyQuery);
+    if (!story) {
+      aiChat.messages.push({ role: "assistant", text: `Could not find exactly one story matching "${result.storyQuery}".` });
+      return;
+    }
+    aiChat.pendingAction = {
+      action: "remove_story",
+      storyId: story.id,
+      confirm: `Remove "${story.title}"${story.key ? ` (${story.key})` : ""} from the backlog?`,
+    };
+    return;
+  }
+
+  if (result.action === "change_status") {
+    const story = findStoryMatch(room, result.storyQuery);
+    if (!story) {
+      aiChat.messages.push({ role: "assistant", text: `Could not find exactly one story matching "${result.storyQuery}".` });
+      return;
+    }
+    if (!story.key) {
+      aiChat.messages.push({ role: "assistant", text: `"${story.title}" isn't linked to a Jira issue.` });
+      return;
+    }
+    const transitions = await jira.getTransitions(story.key);
+    const wanted = result.statusName.toLowerCase();
+    const chosen =
+      transitions.find((t) => t.toStatus.toLowerCase() === wanted) ||
+      transitions.find((t) => t.toStatus.toLowerCase().includes(wanted));
+    if (!chosen) {
+      aiChat.messages.push({
+        role: "assistant",
+        text: `${story.key} can't move to "${result.statusName}" from its current status (${story.jiraStatus || "unknown"}).`,
+      });
+      return;
+    }
+    aiChat.pendingAction = {
+      action: "change_status",
+      storyId: story.id,
+      storyKey: story.key,
+      transitionId: chosen.id,
+      toStatus: chosen.toStatus,
+      confirm: `Move ${story.key} to ${chosen.toStatus}? This updates Jira.`,
+    };
+    return;
+  }
+
+  if (result.action === "change_assignee") {
+    const story = findStoryMatch(room, result.storyQuery);
+    if (!story) {
+      aiChat.messages.push({ role: "assistant", text: `Could not find exactly one story matching "${result.storyQuery}".` });
+      return;
+    }
+    if (!story.key) {
+      aiChat.messages.push({ role: "assistant", text: `"${story.title}" isn't linked to a Jira issue.` });
+      return;
+    }
+    const people = await jira.searchAssignableUsers(story.key, result.personName);
+    const wanted = result.personName.toLowerCase();
+    const chosen = people.find((p) => p.name.toLowerCase() === wanted) || (people.length === 1 ? people[0] : null);
+    if (!chosen) {
+      aiChat.messages.push({
+        role: "assistant",
+        text: people.length
+          ? `More than one person matches "${result.personName}" for ${story.key} — say their full name.`
+          : `Could not find "${result.personName}" among the people assignable to ${story.key}.`,
+      });
+      return;
+    }
+    aiChat.pendingAction = {
+      action: "change_assignee",
+      storyId: story.id,
+      storyKey: story.key,
+      accountId: chosen.accountId,
+      personName: chosen.name,
+      confirm: `Assign ${story.key} to ${chosen.name}? This updates Jira.`,
+    };
+    return;
+  }
+
+  aiChat.messages.push({ role: "assistant", text: "That action isn't wired up yet." });
+}
+
+async function runAiChatAction(pending) {
+  const room = session.store.getState();
+
+  if (pending.action === "import_all_backlog") {
+    try {
+      const config = jira.loadConfig();
+      const issues = await jira.projectBacklog(pending.projectKey, config);
+      const existing = new Set((room.stories || []).map((s) => s.key).filter(Boolean));
+      let added = 0;
+      for (const issue of issues) {
+        if (existing.has(issue.key)) continue;
+        const story = createStory({ title: issue.title, description: issue.description, key: issue.key, url: issue.url });
+        story.jiraPoints = issue.points;
+        story.jiraStatus = issue.status || null;
+        story.jiraAssignee = issue.assignee || null;
+        story.jiraAssigneeId = issue.assigneeId || null;
+        session.store.dispatch({ type: "ADD_STORY", story });
+        existing.add(issue.key);
+        added += 1;
+      }
+      aiChat.messages.push({
+        role: "assistant",
+        text: added
+          ? `Added ${added} issue${added === 1 ? "" : "s"} from ${pending.projectKey}.`
+          : `Nothing new to add — every open issue in ${pending.projectKey} is already in the backlog.`,
+      });
+    } catch (error) {
+      aiChat.messages.push({ role: "assistant", text: errorText(error) });
+    }
+    return;
+  }
+
+  if (pending.action === "remove_story") {
+    const story = room.stories.find((s) => s.id === pending.storyId);
+    if (!story) {
+      aiChat.messages.push({ role: "assistant", text: "That story is already gone." });
+      return;
+    }
+    session.store.dispatch({ type: "DELETE_STORY", id: story.id });
+    aiChat.messages.push({ role: "assistant", text: `Removed "${story.title}" from the backlog.` });
+    return;
+  }
+
+  if (pending.action === "change_status") {
+    try {
+      const landedOn = await jira.applyTransition(pending.storyKey, pending.transitionId);
+      session.store.dispatch({
+        type: "UPDATE_STORY",
+        id: pending.storyId,
+        patch: { jiraStatus: landedOn || pending.toStatus || "" },
+      });
+      aiChat.messages.push({ role: "assistant", text: `${pending.storyKey} moved to ${landedOn || pending.toStatus}.` });
+    } catch (error) {
+      aiChat.messages.push({ role: "assistant", text: errorText(error) });
+    }
+    return;
+  }
+
+  if (pending.action === "change_assignee") {
+    try {
+      await jira.setAssignee(pending.storyKey, pending.accountId);
+      session.store.dispatch({
+        type: "UPDATE_STORY",
+        id: pending.storyId,
+        patch: { jiraAssignee: pending.personName, jiraAssigneeId: pending.accountId },
+      });
+      aiChat.messages.push({ role: "assistant", text: `${pending.storyKey} assigned to ${pending.personName}.` });
+    } catch (error) {
+      aiChat.messages.push({ role: "assistant", text: errorText(error) });
+    }
+    return;
+  }
+
+  aiChat.messages.push({ role: "assistant", text: "That action isn't wired up yet." });
 }
 
 /* ---------- Overlay ---------- */
