@@ -5,9 +5,9 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
  * description summaries, round summaries, disagreement explanations, and the
  * natural-language command bar).
  *
- * The NVIDIA API key is a single shared, server-side secret — it never
+ * The OpenRouter API key is a single shared, server-side secret — it never
  * reaches the browser and the client never sends one. Callers only send the
- * prompt; this forwards it to NVIDIA's OpenAI-compatible endpoint and
+ * prompt; this forwards it to OpenRouter's OpenAI-compatible endpoint and
  * returns the model's reply.
  *
  * verify_jwt is left at its default (true, see supabase/config.toml) rather
@@ -30,14 +30,12 @@ const corsHeaders = {
   "Access-Control-Max-Age": "86400",
 };
 
-const NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
-// If this turns out to be a reasoning-style model that prepends a <think>
-// block before the actual answer (as deepseek-r1 does), our JSON-only
-// prompts should still parse fine — the {...} extraction regex in ai.js
-// ignores anything before the JSON — but a verbose enough reasoning trace
-// could eat into MAX_TOKENS_CAP before the model reaches the actual answer.
-// Watch for truncated/unparseable responses and raise the cap if so.
-const DEFAULT_MODEL = "deepseek-ai/deepseek-v4-pro";
+const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+// The `:free` suffix models on OpenRouter are rate-limited (roughly 20
+// requests/min and a daily cap on an account with no credit balance) — if
+// this starts erroring under real room usage, that is the first thing to
+// check before assuming the model itself broke.
+const DEFAULT_MODEL = "google/gemma-4-31b-it:free";
 // A cost/abuse ceiling — every feature here is a short suggestion or
 // summary, none legitimately need a long completion.
 const MAX_TOKENS_CAP = 700;
@@ -53,9 +51,9 @@ serve(async (req) => {
     });
   }
 
-  const apiKey = Deno.env.get("NVIDIA_API_KEY");
+  const apiKey = Deno.env.get("OPENROUTER_API_KEY");
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: "AI features are not configured (missing NVIDIA_API_KEY)." }), {
+    return new Response(JSON.stringify({ error: "AI features are not configured (missing OPENROUTER_API_KEY)." }), {
       status: 500,
       headers: { "Content-Type": "application/json", ...corsHeaders },
     });
@@ -84,19 +82,23 @@ serve(async (req) => {
   const maxTokens = Math.max(1, Math.min(requestedTokens, MAX_TOKENS_CAP));
 
   try {
-    const response = await fetch(NVIDIA_URL, {
+    const response = await fetch(OPENROUTER_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
         Accept: "application/json",
+        // Not required for the request to work, but OpenRouter asks for
+        // these to attribute usage to the calling app.
+        "HTTP-Referer": "https://jas4flow.github.io/planning-poker/",
+        "X-Title": "Planning Poker",
       },
       body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature: 0.4, stream: false }),
     });
 
     const text = await response.text();
     if (!response.ok) {
-      console.error(`NVIDIA API ${response.status}:`, text);
+      console.error(`OpenRouter API ${response.status}:`, text);
       return new Response(JSON.stringify({ error: `The AI service returned an error (${response.status}).` }), {
         status: 502,
         headers: { "Content-Type": "application/json", ...corsHeaders },
