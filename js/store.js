@@ -410,8 +410,11 @@ export function reduce(state, action) {
 
     case "SET_ESTIMATE": {
       // Once the points reach Jira the story is done with: it leaves the
-      // backlog and lives on in the history only.
-      const archive = Boolean(action.jiraSynced);
+      // backlog and lives on in the history only. `finish` lets the caller
+      // archive it anyway when Jira sync failed but the user chose to keep
+      // the estimate locally — otherwise a story stuck failing sync could
+      // never leave the backlog.
+      const archive = Boolean(action.jiraSynced) || Boolean(action.finish);
       let changed = false;
       room.stories = room.stories.map((story) => {
         if (story.id !== action.id) return story;
