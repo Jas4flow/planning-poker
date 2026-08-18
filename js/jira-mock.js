@@ -239,6 +239,17 @@ export async function searchIssues(jql, config, maxResults = 25) {
     .map((entry) => toStory(withPointsField(entry, config), config));
 }
 
+/** Mirrors the real Backlog screen: open issues not yet pulled into a sprint, in rank order. */
+export async function projectBacklog(projectKey, config) {
+  await wait();
+  const project = String(projectKey || "").toUpperCase();
+  return Object.entries(db())
+    .filter(([key]) => key.startsWith(`${project}-`))
+    .filter(([, entry]) => entry.fields.status.name !== "Done" && !entry.fields.sprintId)
+    .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+    .map(([, entry]) => toStory(withPointsField(entry, config), config));
+}
+
 export async function listProjects() {
   await wait();
   const seen = new Set(Object.keys(db()).map((key) => key.split("-")[0]));

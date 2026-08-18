@@ -665,12 +665,19 @@ export async function listProjects(config = loadConfig()) {
  * rank order" is a close enough stand-in for "the backlog" for picking what
  * to bring into a room.
  */
+/**
+ * The actual Jira Backlog, not just "everything open" — issues already
+ * pulled into a sprint belong on the board, not here, so they're excluded.
+ * Ranked order is what the Backlog screen itself shows, so results come
+ * back pre-sorted and are not re-sorted client-side.
+ */
 export async function projectBacklog(projectKey, config = loadConfig()) {
-  if (config.mock) {
-    const all = await mock.searchIssues(`project = "${projectKey}"`, config, 100);
-    return all.filter((s) => s.status !== "Done");
-  }
-  return searchIssues(`project = "${projectKey}" AND statusCategory != Done ORDER BY Rank ASC`, config, 100);
+  if (config.mock) return mock.projectBacklog(projectKey, config);
+  return searchIssues(
+    `project = "${projectKey}" AND statusCategory != Done AND sprint is EMPTY ORDER BY Rank ASC`,
+    config,
+    100
+  );
 }
 
 export async function listFields(config = loadConfig()) {
