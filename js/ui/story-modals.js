@@ -63,7 +63,12 @@ export function openAddStoryFromJira({ store, activate = true }) {
       return;
     }
 
-    const existing = new Set((store.getState()?.stories || []).map((s) => s.key).filter(Boolean));
+    const existing = new Set(
+      (store.getState()?.stories || [])
+        .filter((s) => s.status !== "archived")
+        .map((s) => s.key)
+        .filter(Boolean)
+    );
     const added = [];
     const skipped = [];
     const failed = [];
@@ -407,7 +412,12 @@ export function openImportFromBacklog({ store, activate = false }) {
       return;
     }
 
-    const existing = new Set((store.getState()?.stories || []).map((s) => s.key).filter(Boolean));
+    const existing = new Set(
+      (store.getState()?.stories || [])
+        .filter((s) => s.status !== "archived")
+        .map((s) => s.key)
+        .filter(Boolean)
+    );
     // Drop selections for issues whose project got removed, or that someone
     // else has since added, so "N selected" never counts something no longer
     // choosable.
@@ -491,7 +501,12 @@ export function openImportFromBacklog({ store, activate = false }) {
   addButton.addEventListener("click", () => {
     // Re-checked against the live room, not the snapshot the lists were built
     // from — someone else may have added one of these in the meantime.
-    const existing = new Set((store.getState()?.stories || []).map((s) => s.key).filter(Boolean));
+    const existing = new Set(
+      (store.getState()?.stories || [])
+        .filter((s) => s.status !== "archived")
+        .map((s) => s.key)
+        .filter(Boolean)
+    );
     const allIssues = Array.from(issuesByProject.values()).flatMap((e) => e.issues || []);
     let added = 0;
     let skipped = 0;
@@ -589,7 +604,12 @@ export function openJqlImport({ store }) {
     handle.busy(true, "Importing…");
     try {
       const issues = await jira.searchIssues(jql);
-      const existing = new Set((store.getState()?.stories || []).map((s) => s.key).filter(Boolean));
+      const existing = new Set(
+      (store.getState()?.stories || [])
+        .filter((s) => s.status !== "archived")
+        .map((s) => s.key)
+        .filter(Boolean)
+    );
       let added = 0;
       for (const issue of issues) {
         if (existing.has(issue.key)) continue;
