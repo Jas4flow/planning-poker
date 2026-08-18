@@ -80,6 +80,8 @@ export function createStory({ title, description = "", key = null, url = null, v
     jiraAssignee: null, // display name, for showing without another round trip
     jiraAssigneeId: null, // Jira accountId — what setAssignee actually needs
     jiraPriority: null, // e.g. "Highest"/"High"/"Medium"/"Low"/"Lowest" — used for the priority backlog sort
+    jiraSprint: null, // display name, for showing without another round trip
+    jiraSprintId: null, // Jira sprint id — what setSprint actually needs
     finalEstimate: null,
     jiraPoints: null,
     jiraSyncedAt: null,

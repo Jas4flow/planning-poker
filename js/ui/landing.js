@@ -4,7 +4,7 @@
  * row level security decides, not this file.
  */
 
-import { $, escapeHtml, setHtml, toast } from "../util.js";
+import { $, escapeHtml, setHtml, toast, bindOnce } from "../util.js";
 import { DECK_LIST } from "../decks.js";
 import * as db from "../supabase.js";
 
@@ -122,11 +122,11 @@ function wireSignIn(card) {
   if (!form) return;
   const message = card.querySelector("#signin-message");
 
-  card.querySelector("#forgot-password")?.addEventListener("click", () => {
+  bindOnce(card.querySelector("#forgot-password"), "click", () => {
     renderResetCard(card.querySelector("#signin-email").value.trim());
   });
 
-  form.addEventListener("submit", async (event) => {
+  bindOnce(form, "submit", async (event) => {
     event.preventDefault();
     const email = card.querySelector("#signin-email").value.trim();
     const password = card.querySelector("#signin-password").value;
@@ -154,7 +154,7 @@ function wireSignIn(card) {
 function wireCreate(card) {
   const form = card.querySelector("#create-form");
   if (!form) return;
-  form.addEventListener("submit", (event) => {
+  bindOnce(form, "submit", (event) => {
     event.preventDefault();
     const button = form.querySelector("button");
     button.disabled = true;
@@ -233,9 +233,9 @@ export function renderResetCard(prefillEmail = "") {
   const say = (text, kind) =>
     setHtml(message, `<p class="note note--${kind}" style="margin-top: var(--sp-4)">${escapeHtml(text)}</p>`);
 
-  card.querySelector("#reset-back").addEventListener("click", () => handlers.onBackToSignIn?.());
+  bindOnce(card.querySelector("#reset-back"), "click", () => handlers.onBackToSignIn?.());
 
-  card.querySelector("#reset-form").addEventListener("submit", async (event) => {
+  bindOnce(card.querySelector("#reset-form"), "submit", async (event) => {
     event.preventDefault();
     const email = card.querySelector("#reset-email").value.trim();
     const button = card.querySelector("#reset-send");
@@ -271,7 +271,7 @@ export function renderResetCard(prefillEmail = "") {
     }
   });
 
-  codeForm.addEventListener("submit", async (event) => {
+  bindOnce(codeForm, "submit", async (event) => {
     event.preventDefault();
     const email = card.querySelector("#reset-email").value.trim();
     const code = card.querySelector("#reset-code").value;
@@ -313,7 +313,7 @@ export function renderNewPasswordCard() {
      <div id="reset-message"></div>`
   );
 
-  card.querySelector("#new-password-form").addEventListener("submit", async (event) => {
+  bindOnce(card.querySelector("#new-password-form"), "submit", async (event) => {
     event.preventDefault();
     const button = card.querySelector("#new-password-form button");
     button.disabled = true;
@@ -358,10 +358,10 @@ async function loadLists(auth, card) {
     cache = { owned, invited, loading: false };
     setHtml(host, lists(owned, invited));
     host.querySelectorAll("[data-open]").forEach((button) =>
-      button.addEventListener("click", () => handlers.onOpen(button.dataset.open))
+      bindOnce(button, "click", () => handlers.onOpen(button.dataset.open))
     );
     host.querySelectorAll("[data-delete]").forEach((button) =>
-      button.addEventListener("click", () => handlers.onDelete?.(button.dataset.delete))
+      bindOnce(button, "click", () => handlers.onDelete?.(button.dataset.delete))
     );
   } catch (error) {
     setHtml(host, `<p class="note note--danger">${escapeHtml(error.message)}</p>`);

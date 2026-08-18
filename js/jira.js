@@ -497,6 +497,46 @@ export async function setAssignee(key, accountId, config = loadConfig()) {
 }
 
 /**
+ * Sprint fields are a per-instance custom field on the plain REST API, so
+ * this goes through the Agile API instead — it exposes `sprint` as a clean,
+ * stable field regardless of that custom field's id.
+ */
+export async function getIssueSprint(key, config = loadConfig()) {
+  if (config.mock) return mock.getIssueSprint(key);
+
+  const data = await request(`/rest/agile/1.0/issue/${encodeURIComponent(key)}?fields=sprint`, { config });
+  const sprint = data?.fields?.sprint;
+  return sprint ? { id: sprint.id, name: sprint.name, state: sprint.state } : null;
+}
+
+/** The board backing a project's sprints — needed to list what an issue could be moved into. */
+async function getBoardId(projectKey, config) {
+  const data = await request(`/rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(projectKey)}`, { config });
+  return data?.values?.[0]?.id ?? null;
+}
+
+/** Active and future sprints only — a closed sprint isn't something you'd move a story into. */
+export async function listSprints(projectKey, config = loadConfig()) {
+  if (config.mock) return mock.listSprints(projectKey);
+
+  const boardId = await getBoardId(projectKey, config);
+  if (!boardId) throw new JiraError(`No board found for project ${projectKey} — sprints need a Scrum/Kanban board.`, { kind: "not-found" });
+  const data = await request(`/rest/agile/1.0/board/${boardId}/sprint?state=active,future`, { config });
+  return (data?.values || []).map((s) => ({ id: s.id, name: s.name, state: s.state }));
+}
+
+/** `sprintId: null` takes the issue out of whatever sprint it's in, back to the backlog. */
+export async function setSprint(key, sprintId, config = loadConfig()) {
+  if (config.mock) return mock.setSprint(key, sprintId);
+
+  if (sprintId) {
+    await request(`/rest/agile/1.0/sprint/${sprintId}/issue`, { method: "POST", body: { issues: [key] }, config });
+  } else {
+    await request(`/rest/agile/1.0/backlog/issue`, { method: "POST", body: { issues: [key] }, config });
+  }
+}
+
+/**
  * The transitions actually available from this issue's CURRENT workflow
  * state — not a fixed list. Jira workflows restrict which status changes are
  * legal from wherever the issue sits right now, so this has to be asked for

@@ -87,7 +87,10 @@ function storyNow(story, ctx, room) {
             : `<span class="points points--pending">–</span>`
         }
       </div>
-      ${assigneeRow(story, ctx)}
+      <div class="row row--tight" style="flex-wrap:wrap">
+        ${assigneeRow(story, ctx)}
+        ${sprintRow(story, ctx)}
+      </div>
       <div class="story-now__title-row">
         <h2 class="story-now__title">${escapeHtml(story.title)}</h2>
         ${story.description ? aiDescSummaryTrigger(ctx.descSummary?.storyId === story.id) : ""}
@@ -194,6 +197,59 @@ function assigneePickerMenu(story, picker) {
           : ""
       }
       <div class="assignee-picker__results">${rows}</div>
+    </div>`;
+}
+
+function sprintRow(story, ctx) {
+  const canEdit = ctx.isOwner && story.key;
+  if (!story.jiraSprint && !canEdit) return "";
+
+  const label = story.jiraSprint ? escapeHtml(story.jiraSprint) : "No sprint";
+
+  if (!canEdit) {
+    return `<div class="story-now__meta"><span class="muted">🏃 ${label}</span></div>`;
+  }
+
+  return `
+    <div class="story-now__meta sprint-picker">
+      <button class="btn btn--sm btn--ghost" type="button" data-act="toggle-sprint-picker"
+              aria-expanded="${ctx.sprintPicker?.storyId === story.id}" title="Change sprint in Jira">
+        🏃 ${label} ▾
+      </button>
+      ${ctx.sprintPicker?.storyId === story.id ? sprintPickerMenu(story, ctx.sprintPicker) : ""}
+    </div>`;
+}
+
+function sprintPickerMenu(story, picker) {
+  const rows = picker.error
+    ? `<p class="status-picker__error">${escapeHtml(picker.error)}</p>`
+    : picker.loading
+    ? `<p class="status-picker__loading">Loading sprints…</p>`
+    : !picker.sprints?.length
+    ? `<p class="status-picker__empty">No active or future sprints on this project's board.</p>`
+    : picker.sprints
+        .map(
+          (s) => `
+        <button class="status-picker__option" type="button" role="menuitem"
+                data-act="pick-sprint" data-sprint-id="${s.id}" data-sprint-name="${escapeHtml(s.name)}"
+                ${picker.applying ? "disabled" : ""}>
+          <span>${escapeHtml(s.name)}</span>
+          <span class="chip${s.state === "active" ? " chip--ok" : ""}">${escapeHtml(s.state)}</span>
+        </button>`
+        )
+        .join("");
+
+  return `
+    <div class="status-picker__menu" role="menu">
+      ${
+        story.jiraSprint
+          ? `<button class="status-picker__option" type="button" role="menuitem"
+               data-act="pick-sprint" data-sprint-id="" data-sprint-name="" ${picker.applying ? "disabled" : ""}>
+               <span>Move to backlog (no sprint)</span>
+             </button>`
+          : ""
+      }
+      ${rows}
     </div>`;
 }
 

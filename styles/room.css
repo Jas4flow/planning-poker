@@ -799,6 +799,10 @@ body.is-resizing {
   position: relative; /* anchors the dropdown */
 }
 
+.sprint-picker {
+  position: relative; /* anchors its dropdown (reuses .status-picker__menu's look) */
+}
+
 .sort-menu {
   position: relative; /* anchors .sort-menu__menu */
 }

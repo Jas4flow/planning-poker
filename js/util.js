@@ -116,6 +116,23 @@ export function $$(selector, root = document) {
   return Array.from(root.querySelectorAll(selector));
 }
 
+/**
+ * Attaches a listener at most once per element. setHtml (below) morphs the
+ * DOM in place rather than replacing it, so a node from a past render can
+ * still be the exact same one on screen now — code that re-wires it with a
+ * plain addEventListener on every render (rather than using the app-wide
+ * data-act delegation on `document`) stacks up a duplicate listener each
+ * time, so one click ends up firing the handler N times. Use this for any
+ * one-off listener attached directly to a specific element instead.
+ */
+export function bindOnce(el, event, handler) {
+  if (!el) return;
+  const key = `__bound_${event}`;
+  if (el[key]) return;
+  el[key] = true;
+  el.addEventListener(event, handler);
+}
+
 /*
  * render() calls this on every tick as well as on every state change, for
  * panels that mostly do not change tick to tick — and, whenever the round

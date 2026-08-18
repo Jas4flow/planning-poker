@@ -194,6 +194,38 @@ export async function setAssignee(key, accountId) {
   persist(issues);
 }
 
+/** One board's worth of sprints, shared across every mock project — enough to exercise "pick one". */
+const MOCK_SPRINTS = [
+  { id: 1, name: "Sprint 24", state: "active" },
+  { id: 2, name: "Sprint 25", state: "future" },
+  { id: 3, name: "Sprint 26", state: "future" },
+];
+
+export async function getIssueSprint(key) {
+  await wait();
+  const found = db()[key];
+  if (!found) throw new JiraError(`Mock Jira has no issue ${key}.`, { status: 404, kind: "not-found" });
+  const sprintId = found.fields.sprintId;
+  return sprintId ? MOCK_SPRINTS.find((s) => s.id === sprintId) || null : null;
+}
+
+export async function listSprints() {
+  await wait();
+  return MOCK_SPRINTS;
+}
+
+export async function setSprint(key, sprintId) {
+  await wait();
+  const issues = db();
+  const found = issues[key];
+  if (!found) throw new JiraError(`Mock Jira has no issue ${key}.`, { status: 404, kind: "not-found" });
+  if (sprintId && !MOCK_SPRINTS.some((s) => s.id === sprintId)) {
+    throw new JiraError("Mock Jira has no such sprint.", { status: 400, kind: "invalid" });
+  }
+  found.fields.sprintId = sprintId || null;
+  persist(issues);
+}
+
 export async function searchIssues(jql, config, maxResults = 25) {
   await wait();
   const issues = Object.values(db());

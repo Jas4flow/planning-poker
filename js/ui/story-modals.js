@@ -89,6 +89,18 @@ export function openAddStoryFromJira({ store, activate = true }) {
           story.jiraAssignee = issue.assignee || null;
           story.jiraAssigneeId = issue.assigneeId || null;
           story.jiraPriority = issue.priority || null;
+          // A separate call (the sprint field lives on the Agile API, not
+          // the plain issue fetch above) — fine for the handful of keys
+          // typed here, but skipped in the bulk import paths (JQL, project
+          // backlog) to avoid one extra request per issue; those can be
+          // refreshed individually afterward instead.
+          try {
+            const sprint = await jira.getIssueSprint(issue.key);
+            story.jiraSprint = sprint?.name || null;
+            story.jiraSprintId = sprint?.id || null;
+          } catch {
+            /* no board/sprint on this project — not fatal, just leave it unset */
+          }
           if (issue.points !== null && issue.points !== undefined) {
             story.finalEstimate = String(issue.points);
           }

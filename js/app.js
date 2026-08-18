@@ -20,6 +20,7 @@ import {
   playReveal,
   formatClock,
   htmlToText,
+  bindOnce,
 } from "./util.js";
 import { createStore, createRoom, createStory, activeStory, allVoted, castVotes } from "./store.js";
 import { createSupabaseTransport } from "./transport.js";
@@ -524,7 +525,7 @@ async function showJoin(token) {
   );
 
   const button = $("#join-go");
-  button.addEventListener("click", async () => {
+  bindOnce(button, "click", async () => {
     const name = $("#join-name").value.trim();
     if (!name) return $("#join-name").focus();
     const role = $("#join-role").value;
@@ -569,6 +570,9 @@ let assigneeSearchTimer = null;
 /** The backlog sort icon's dropdown — a one-shot menu, not tied to any particular story. */
 let sortMenuOpen = false;
 
+/** Same idea as statusPicker — a fixed list of the project's active/future sprints, not a search box. */
+let sprintPicker = null; // { storyId, loading, applying, sprints, error }
+
 document.addEventListener("click", (event) => {
   if (statusPicker && !event.target.closest(".status-picker")) {
     statusPicker = null;
@@ -580,6 +584,10 @@ document.addEventListener("click", (event) => {
   }
   if (sortMenuOpen && !event.target.closest(".sort-menu")) {
     sortMenuOpen = false;
+    render();
+  }
+  if (sprintPicker && !event.target.closest(".sprint-picker")) {
+    sprintPicker = null;
     render();
   }
 });
@@ -958,6 +966,7 @@ function context(room) {
     disagreementExplain,
     aiChat,
     sortMenuOpen,
+    sprintPicker,
   };
 }
 
@@ -1328,6 +1337,56 @@ const actions = {
         render();
       });
   },
+  "toggle-sprint-picker": () => {
+    const story = activeStory(session.store.getState());
+    if (!story?.key) return;
+    if (sprintPicker?.storyId === story.id) {
+      sprintPicker = null;
+      render();
+      return;
+    }
+    sprintPicker = { storyId: story.id, loading: true, applying: false, sprints: null, error: null };
+    render();
+    jira
+      .listSprints(story.key.split("-")[0])
+      .then((sprints) => {
+        if (sprintPicker?.storyId !== story.id) return;
+        sprintPicker = { ...sprintPicker, loading: false, sprints, error: null };
+        render();
+      })
+      .catch((error) => {
+        if (sprintPicker?.storyId !== story.id) return;
+        sprintPicker = { ...sprintPicker, loading: false, sprints: [], error: errorText(error) };
+        render();
+      });
+  },
+  "pick-sprint": (el) => {
+    if (!sprintPicker || sprintPicker.applying) return;
+    const room = session.store.getState();
+    const story = room.stories.find((s) => s.id === sprintPicker.storyId);
+    if (!story?.key) return;
+    const sprintId = el.dataset.sprintId ? Number(el.dataset.sprintId) : null;
+    const name = el.dataset.sprintName || "";
+    sprintPicker = { ...sprintPicker, applying: true, error: null };
+    render();
+    jira
+      .setSprint(story.key, sprintId)
+      .then(() => {
+        session.store.dispatch({
+          type: "UPDATE_STORY",
+          id: story.id,
+          patch: { jiraSprint: sprintId ? name : null, jiraSprintId: sprintId },
+        });
+        toast(sprintId ? `${story.key} moved to ${name}.` : `${story.key} moved to the backlog.`, "ok");
+        sprintPicker = null;
+        render();
+      })
+      .catch((error) => {
+        if (sprintPicker?.storyId !== story.id) return;
+        sprintPicker = { ...sprintPicker, applying: false, error: errorText(error) };
+        render();
+      });
+  },
   "suggest-estimate": () => {
     const room = session.store.getState();
     const story = activeStory(room);
@@ -1444,6 +1503,12 @@ const actions = {
     if (!story?.key) return;
     try {
       const issue = await jira.getIssue(story.key);
+      let sprint = null;
+      try {
+        sprint = await jira.getIssueSprint(story.key);
+      } catch {
+        /* no board/sprint on this project — leave it unset */
+      }
       session.store.dispatch({
         type: "UPDATE_STORY",
         id: story.id,
@@ -1454,6 +1519,9 @@ const actions = {
           jiraStatus: issue.status || null,
           jiraAssignee: issue.assignee || null,
           jiraAssigneeId: issue.assigneeId || null,
+          jiraPriority: issue.priority || null,
+          jiraSprint: sprint?.name || null,
+          jiraSprintId: sprint?.id || null,
           url: issue.url,
         },
       });
