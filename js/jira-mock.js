@@ -239,14 +239,21 @@ export async function searchIssues(jql, config, maxResults = 25) {
     .map((entry) => toStory(withPointsField(entry, config), config));
 }
 
-/** Mirrors the real Backlog screen: open issues not yet pulled into a sprint, in rank order. */
+/** Highest first, same order Jira's own priority field sorts in. */
+const PRIORITY_RANK = { Highest: 0, High: 1, Medium: 2, Low: 3, Lowest: 4 };
+
+/** Mirrors the real Backlog screen: open issues not yet pulled into a sprint, sorted by priority then rank. */
 export async function projectBacklog(projectKey, config) {
   await wait();
   const project = String(projectKey || "").toUpperCase();
   return Object.entries(db())
     .filter(([key]) => key.startsWith(`${project}-`))
     .filter(([, entry]) => entry.fields.status.name !== "Done" && !entry.fields.sprintId)
-    .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+    .sort(([a, entryA], [b, entryB]) => {
+      const priorityDiff =
+        (PRIORITY_RANK[entryA.fields.priority?.name] ?? 99) - (PRIORITY_RANK[entryB.fields.priority?.name] ?? 99);
+      return priorityDiff !== 0 ? priorityDiff : a.localeCompare(b, undefined, { numeric: true });
+    })
     .map(([, entry]) => toStory(withPointsField(entry, config), config));
 }
 

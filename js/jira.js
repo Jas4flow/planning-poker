@@ -658,23 +658,16 @@ export async function listProjects(config = loadConfig()) {
 }
 
 /**
- * The open issues in a project, ranked as they sit in the backlog. This asks
- * the plain issue-search API with a project-scoped JQL rather than the Jira
- * Software agile API (`/rest/agile/1.0/board/{id}/backlog`), since that needs
- * a board id a project may not have (or may have several of) — "open, in
- * rank order" is a close enough stand-in for "the backlog" for picking what
- * to bring into a room.
- */
-/**
  * The actual Jira Backlog, not just "everything open" — issues already
  * pulled into a sprint belong on the board, not here, so they're excluded.
- * Ranked order is what the Backlog screen itself shows, so results come
- * back pre-sorted and are not re-sorted client-side.
+ * Sorted by priority first, same as Jira's own backlog view, with rank as
+ * the tiebreaker within a priority — so results come back pre-sorted and
+ * are not re-sorted client-side.
  */
 export async function projectBacklog(projectKey, config = loadConfig()) {
   if (config.mock) return mock.projectBacklog(projectKey, config);
   return searchIssues(
-    `project = "${projectKey}" AND statusCategory != Done AND sprint is EMPTY ORDER BY Rank ASC`,
+    `project = "${projectKey}" AND statusCategory != Done AND sprint is EMPTY ORDER BY priority DESC, Rank ASC`,
     config,
     100
   );
