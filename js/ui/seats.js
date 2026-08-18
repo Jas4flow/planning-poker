@@ -1,7 +1,7 @@
 /** The table: seats around the felt, the felt itself, and the revealed results. */
 
 import { escapeHtml, initials, formatClock, round } from "../util.js";
-import { activeStory, activeVoters, castVotes, isAway, hasSelectedStory } from "../store.js";
+import { activeStory, activeVoters, castVotes, isAway, hasSelectedStory, isHostId } from "../store.js";
 import { deckCards } from "../decks.js";
 import { computeStats } from "../stats.js";
 import { remainingSeconds } from "../timer.js";
@@ -63,7 +63,11 @@ function seat(person, room, ctx, now, stats, side) {
       <div class="seat__who">
         <span class="seat__avatar">${escapeHtml(initials(person.name))}</span>
         <span class="seat__name">${escapeHtml(person.name)}${
-          person.id === room.hostId ? ' <span class="seat__host" title="Host">★</span>' : ""
+          person.id === room.hostId
+            ? ' <span class="seat__host" title="Primary host">★</span>'
+            : isHostId(room, person.id)
+            ? ' <span class="seat__host" title="Co-host">☆</span>'
+            : ""
         }</span>
       </div>
     </div>`;

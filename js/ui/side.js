@@ -1,7 +1,7 @@
 /** Sidebar: the story on the table, the backlog, people, and round history. */
 
 import { escapeHtml, initials, formatTime, round } from "../util.js";
-import { activeStory, isAway, hasSelectedStory } from "../store.js";
+import { activeStory, isAway, hasSelectedStory, isHostId } from "../store.js";
 import { deckCards, DECK_LIST } from "../decks.js";
 import { computeStats } from "../stats.js";
 
@@ -453,7 +453,13 @@ function personRow(person, room, ctx, now) {
       <span class="seat__avatar">${escapeHtml(initials(person.name))}</span>
       <span class="person__name">
         ${escapeHtml(person.name)}${person.id === ctx.meId ? " (you)" : ""}
-        ${person.id === room.hostId ? '<span class="seat__host" title="Host">★</span>' : ""}
+        ${
+          person.id === room.hostId
+            ? '<span class="seat__host" title="Primary host">★</span>'
+            : isHostId(room, person.id)
+            ? '<span class="seat__host" title="Co-host">☆</span>'
+            : ""
+        }
       </span>
       ${
         person.role === "spectator"
@@ -467,7 +473,13 @@ function personRow(person, room, ctx, now) {
       <span class="person__actions">
         ${
           ctx.isHost && person.id !== ctx.meId
-            ? `<button class="btn btn--sm btn--ghost" type="button" data-act="make-host" data-id="${person.id}" title="Make host">★</button>
+            ? `${
+                person.id === room.hostId
+                  ? ""
+                  : isHostId(room, person.id)
+                  ? `<button class="btn btn--sm btn--ghost" type="button" data-act="make-host" data-id="${person.id}" title="Remove host access">☆</button>`
+                  : `<button class="btn btn--sm btn--ghost" type="button" data-act="make-host" data-id="${person.id}" title="Make co-host">★</button>`
+              }
                <button class="btn btn--sm btn--ghost" type="button" data-act="kick" data-id="${person.id}" title="Remove from room">×</button>`
             : ""
         }

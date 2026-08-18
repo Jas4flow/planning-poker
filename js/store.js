@@ -25,6 +25,7 @@ export function createRoom({ id, name, deckId = "fibonacci", customCards = [], h
     name: name?.trim() || "Refinement",
     createdAt: at,
     hostId: host?.id || null,
+    coHostIds: [], // additional hosts beyond the primary — same permissions, see isHostId below
     deckId: DECKS[deckId] ? deckId : "fibonacci",
     customCards,
     autoReveal: false,
@@ -97,6 +98,7 @@ export function normalizeRoom(raw) {
   const base = createRoom({ id: raw.id, name: raw.name, at: raw.createdAt });
   const room = { ...base, ...raw };
   room.hostId = raw.hostId || raw.host_id || raw.owner_id || base.hostId;
+  room.coHostIds = Array.isArray(raw.coHostIds) ? raw.coHostIds : [];
   room.participants = raw.participants && typeof raw.participants === "object" ? raw.participants : {};
   room.stories = Array.isArray(raw.stories)
     ? raw.stories.map((s) => ({ ...s, votingEnabled: Boolean(s?.votingEnabled) }))
@@ -165,11 +167,12 @@ export function reduce(state, action) {
         [action.id]: { ...person, lastSeen: 0, reaction: null },
       };
       if (room.hostId === action.id) room.hostId = nextHost(room.participants);
+      room.coHostIds = (room.coHostIds || []).filter((id) => id !== action.id);
       return room;
     }
 
     case "KICK": {
-      if (action.by && action.by !== room.hostId) return state;
+      if (action.by && !isHostId(room, action.by)) return state;
       if (!room.participants[action.id]) return state;
       return removeParticipant(room, action.id);
     }
@@ -197,9 +200,33 @@ export function reduce(state, action) {
     }
 
     case "SET_HOST": {
-      if (action.by && action.by !== room.hostId) return state;
+      if (action.by && !isHostId(room, action.by)) return state;
       if (!room.participants[action.id]) return state;
       room.hostId = action.id;
+      // They're the primary host now — redundant as a co-host.
+      room.coHostIds = (room.coHostIds || []).filter((id) => id !== action.id);
+      return room;
+    }
+
+    /**
+     * Additional hosts beyond the primary — same permissions (see isHostId),
+     * but the primary host stays the one nextHost()/repair-on-owner falls
+     * back to. Anyone already holding host access (primary or co-) can grant
+     * or revoke another co-host; the primary host itself is only changed via
+     * SET_HOST, never removed through this.
+     */
+    case "ADD_COHOST": {
+      if (action.by && !isHostId(room, action.by)) return state;
+      if (!room.participants[action.id] || action.id === room.hostId) return state;
+      if ((room.coHostIds || []).includes(action.id)) return state;
+      room.coHostIds = [...(room.coHostIds || []), action.id];
+      return room;
+    }
+
+    case "REMOVE_COHOST": {
+      if (action.by && !isHostId(room, action.by)) return state;
+      if (!(room.coHostIds || []).includes(action.id)) return state;
+      room.coHostIds = room.coHostIds.filter((id) => id !== action.id);
       return room;
     }
 
@@ -234,7 +261,7 @@ export function reduce(state, action) {
       const person = room.participants[action.id];
       const story = activeStory(room);
       if (!person || person.role !== "voter" || !story || !story.votingEnabled) return state;
-      if (action.id !== room.hostId && person.selectedStoryId !== story.id) return state;
+      if (!isHostId(room, action.id) && person.selectedStoryId !== story.id) return state;
       const votes = { ...room.votes };
       votes[action.id] = action.card;
       room.votes = votes;
@@ -266,7 +293,7 @@ export function reduce(state, action) {
 
     case "REVEAL": {
       if (room.revealed) return state;
-      if (action.by && action.by !== room.hostId) return state;
+      if (action.by && !isHostId(room, action.by)) return state;
       if (!Object.keys(room.votes).length) return state;
       room.revealed = true;
       room.revealedAt = at;
@@ -290,7 +317,7 @@ export function reduce(state, action) {
     }
 
     case "RESET_ROUND": {
-      if (action.by && action.by !== room.hostId) return state;
+      if (action.by && !isHostId(room, action.by)) return state;
       room.votes = {};
       room.revealed = false;
       room.revealedAt = null;
@@ -301,7 +328,7 @@ export function reduce(state, action) {
     }
 
     case "ADD_STORY": {
-      if (action.by && action.by !== room.hostId) return state;
+      if (action.by && !isHostId(room, action.by)) return state;
       const story = action.story;
       if (!story) return state;
       if (story.id && room.stories.some((s) => s.id === story.id)) return state;
@@ -484,6 +511,7 @@ function removeParticipant(room, id) {
   room.participants = participants;
   room.votes = votes;
   if (room.hostId === id) room.hostId = nextHost(participants);
+  room.coHostIds = (room.coHostIds || []).filter((coId) => coId !== id);
   return room;
 }
 
@@ -513,10 +541,15 @@ export function isAway(person, now = Date.now()) {
   return now - (person?.lastSeen ?? 0) > AWAY_AFTER_MS;
 }
 
-/** The host is always considered present at the table; everyone else has to join the active story first. */
+/** True for the primary host or any co-host — same room-wide permissions either way. */
+export function isHostId(room, id) {
+  return Boolean(id) && room && (id === room.hostId || (room.coHostIds || []).includes(id));
+}
+
+/** Any host is always considered present at the table; everyone else has to join the active story first. */
 export function hasSelectedStory(room, personId) {
   if (!room || !personId) return false;
-  if (personId === room.hostId) return true;
+  if (isHostId(room, personId)) return true;
   if (!room.activeStoryId) return false;
   return room.participants[personId]?.selectedStoryId === room.activeStoryId;
 }

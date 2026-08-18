@@ -22,7 +22,7 @@ import {
   htmlToText,
   bindOnce,
 } from "./util.js";
-import { createStore, createRoom, createStory, activeStory, allVoted, castVotes } from "./store.js";
+import { createStore, createRoom, createStory, activeStory, allVoted, castVotes, isHostId } from "./store.js";
 import { createSupabaseTransport } from "./transport.js";
 import * as db from "./supabase.js";
 import { deckCards, deckLabel, parseCustomDeck, DECKS } from "./decks.js";
@@ -470,7 +470,7 @@ async function enterRoom(roomId) {
   store.dispatch({ type: "JOIN", id: me.id, name: me.name, role: myRole });
   void db.touchMembership(roomId, { display_name: me.name });
   const updatedRoom = store.getState();
-  if (updatedRoom.activeStoryId && me.id !== updatedRoom.hostId) {
+  if (updatedRoom.activeStoryId && !isHostId(updatedRoom, me.id)) {
     store.dispatch({ type: "SELECT_STORY", id: me.id, storyId: updatedRoom.activeStoryId });
   }
   render();
@@ -954,7 +954,7 @@ function closeOverlay() {
 function context(room) {
   return {
     meId: me.id,
-    isHost: room.hostId === me.id,
+    isHost: isHostId(room, me.id),
     isSpectator: room.participants[me.id]?.role === "spectator",
     isOwner: session?.meta?.owner_id === me.id,
     now: Date.now(),
@@ -1073,7 +1073,7 @@ ticker.add((now) => {
       label.textContent = formatClock(seconds);
       label.classList.toggle("felt__timer--low", seconds <= 10);
     }
-    if (isTimerFinished(room, now) && room.hostId === me.id) {
+    if (isTimerFinished(room, now) && isHostId(room, me.id)) {
       session.store.dispatch({ type: "TIMER_END" });
       if (room.revealOnTimerEnd && Object.keys(room.votes).length) {
         session.store.dispatch({ type: "REVEAL" });
@@ -1136,7 +1136,7 @@ const actions = {
   vote: (el) => castCard(el.dataset.card),
   reveal: () => {
     const room = session.store.getState();
-    if (room && room.hostId === me.id) {
+    if (room && isHostId(room, me.id)) {
       session.store.dispatch({ type: "REVEAL", by: me.id });
     } else {
       toast("Only the host can reveal the cards.", "warn");
@@ -1144,7 +1144,7 @@ const actions = {
   },
   reset: () => {
     const room = session.store.getState();
-    if (room && room.hostId === me.id) {
+    if (room && isHostId(room, me.id)) {
       session.store.dispatch({ type: "RESET_ROUND", by: me.id });
     }
   },
@@ -1181,7 +1181,7 @@ const actions = {
   /* stories */
   "toggle-voting": (el) => {
     const room = session.store.getState();
-    if (!room || room.hostId !== me.id) {
+    if (!room || !isHostId(room, me.id)) {
       toast("Only the host can toggle voting.", "warn");
       return;
     }
@@ -1194,22 +1194,22 @@ const actions = {
   },
   "add-story": () => {
     const room = session.store.getState();
-    if (room && room.hostId !== me.id) return toast("Only the host can add stories.", "warn");
+    if (room && !isHostId(room, me.id)) return toast("Only the host can add stories.", "warn");
     openAddStoryFromJira({ store: session.store });
   },
   "add-story-manual": () => {
     const room = session.store.getState();
-    if (room && room.hostId !== me.id) return toast("Only the host can add stories.", "warn");
+    if (room && !isHostId(room, me.id)) return toast("Only the host can add stories.", "warn");
     openManualStory({ store: session.store });
   },
   "import-jql": () => {
     const room = session.store.getState();
-    if (room && room.hostId !== me.id) return toast("Only the host can import stories.", "warn");
+    if (room && !isHostId(room, me.id)) return toast("Only the host can import stories.", "warn");
     openJqlImport({ store: session.store });
   },
   "import-backlog": () => {
     const room = session.store.getState();
-    if (room && room.hostId !== me.id) return toast("Only the host can import stories.", "warn");
+    if (room && !isHostId(room, me.id)) return toast("Only the host can import stories.", "warn");
     openImportFromBacklog({ store: session.store });
   },
   "edit-story": () => {
@@ -1607,14 +1607,22 @@ const actions = {
     void db.touchMembership(session.roomId, { display_name: name });
     session.store.dispatch({ type: "SET_NAME", id: me.id, name });
   },
+  /**
+   * Toggles someone's CO-host access — not the primary host transfer that
+   * SET_HOST does. Grants it if they don't already have it (primary hosts
+   * are unaffected, already have full access); revokes it if they do.
+   */
   "make-host": (el) => {
     const room = session.store.getState();
-    if (room && room.hostId !== me.id) return toast("Only the host can transfer host.", "warn");
-    session.store.dispatch({ type: "SET_HOST", id: el.dataset.id, by: me.id });
+    if (!room || !isHostId(room, me.id)) return toast("Only the host can grant host access.", "warn");
+    const targetId = el.dataset.id;
+    if (targetId === room.hostId) return; // the primary host — nothing to toggle
+    const isCoHost = (room.coHostIds || []).includes(targetId);
+    session.store.dispatch({ type: isCoHost ? "REMOVE_COHOST" : "ADD_COHOST", id: targetId, by: me.id });
   },
   kick: async (el) => {
     const room = session.store.getState();
-    if (room && room.hostId !== me.id) return toast("Only the host can remove someone.", "warn");
+    if (room && !isHostId(room, me.id)) return toast("Only the host can remove someone.", "warn");
     const person = room.participants[el.dataset.id];
     if (!person) return;
     const yes = await confirmDialog({
