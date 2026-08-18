@@ -350,6 +350,11 @@ function storyRow(story, room, ctx) {
         }
         <button type="button" data-act="move-story" data-id="${story.id}" data-direction="up" aria-label="Move up" title="Move up">↑</button>
         <button type="button" data-act="move-story" data-id="${story.id}" data-direction="down" aria-label="Move down" title="Move down">↓</button>
+        ${
+          ctx?.isHost
+            ? `<button type="button" data-act="archive-story" data-id="${story.id}" aria-label="Move to history" title="Move to history">🗄</button>`
+            : ""
+        }
         <button type="button" data-act="delete-story" data-id="${story.id}" aria-label="Remove" title="Remove">×</button>
       </div>
     </li>`;

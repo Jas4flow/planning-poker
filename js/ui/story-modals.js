@@ -946,10 +946,7 @@ function offerLocalSave(handle, store, story, value) {
   button.dataset.local = "1";
   button.textContent = `Keep ${round(Number(value), 2) ?? value} in the session only`;
   button.addEventListener("click", () => {
-    // Still finishes the story locally — the point is that the user is done
-    // estimating, whether or not Jira accepted the write. Otherwise a story
-    // whose Jira sync keeps failing can never leave the backlog.
-    store.dispatch({ type: "SET_ESTIMATE", id: story.id, value: String(value), finish: true });
+    store.dispatch({ type: "SET_ESTIMATE", id: story.id, value: String(value) });
     toast("Estimate saved in the session, not in Jira.", "warn");
     closeModal();
   });

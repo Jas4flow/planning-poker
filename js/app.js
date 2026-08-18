@@ -1237,6 +1237,12 @@ const actions = {
     session.store.dispatch({ type: "SET_ACTIVE_STORY", id: el.dataset.id });
     toast("Back on the story board.", "ok");
   },
+  "archive-story": (el) => {
+    const room = session.store.getState();
+    if (!isHostId(room, me.id)) return toast("Only the host can move a story to history.", "warn");
+    session.store.dispatch({ type: "ARCHIVE_STORY", id: el.dataset.id });
+    toast("Moved to history.", "ok");
+  },
   "update-points-history": (el) => {
     const room = session.store.getState();
     const story = room.stories.find((s) => s.id === el.dataset.id);

@@ -409,12 +409,10 @@ export function reduce(state, action) {
     }
 
     case "SET_ESTIMATE": {
-      // Once the points reach Jira the story is done with: it leaves the
-      // backlog and lives on in the history only. `finish` lets the caller
-      // archive it anyway when Jira sync failed but the user chose to keep
-      // the estimate locally — otherwise a story stuck failing sync could
-      // never leave the backlog.
-      const archive = Boolean(action.jiraSynced) || Boolean(action.finish);
+      // Setting the point (whether synced to Jira or kept local) no longer
+      // moves a story out of the backlog by itself — that is now a separate,
+      // explicit action (ARCHIVE_STORY) so the host decides when a story is
+      // actually done with, not the point-entry flow.
       let changed = false;
       room.stories = room.stories.map((story) => {
         if (story.id !== action.id) return story;
@@ -422,19 +420,21 @@ export function reduce(state, action) {
         return {
           ...story,
           finalEstimate: action.value ?? null,
-          status:
-            action.value === null || action.value === undefined
-              ? "pending"
-              : archive
-              ? "archived"
-              : "estimated",
+          status: action.value === null || action.value === undefined ? "pending" : "estimated",
           jiraPoints: action.jiraPoints !== undefined ? action.jiraPoints : story.jiraPoints,
           jiraSyncedAt: action.jiraSynced ? at : story.jiraSyncedAt,
           jiraSyncedBy: action.jiraSynced ? action.by ?? story.jiraSyncedBy : story.jiraSyncedBy,
         };
       });
-      if (!changed) return state;
-      if (archive && room.activeStoryId === action.id) {
+      return changed ? room : state;
+    }
+
+    case "ARCHIVE_STORY": {
+      if (!room.stories.some((s) => s.id === action.id && s.status !== "archived")) return state;
+      room.stories = room.stories.map((story) =>
+        story.id === action.id ? { ...story, status: "archived" } : story
+      );
+      if (room.activeStoryId === action.id) {
         room.activeStoryId = room.stories.find((s) => s.id !== action.id && s.status !== "archived")?.id || null;
         room.votes = {};
         room.revealed = false;
